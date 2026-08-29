@@ -218,7 +218,7 @@ def load_and_clean(raw_bytes: bytes):
     # dataframe whose "% of group" column gets truncated at narrow widths.
     diag["incomplete_crosstab_wide"] = (
         pd.crosstab(df["isIncompleteFiling"], df["complianceStatus"], normalize="index")
-        .mul(100).round(1)
+        .mul(100).round(2)
         .reindex(columns=["COMPLIED", "NOT COMPLIED"], fill_value=0.0)
         .reindex(index=[False, True], fill_value=0.0)
     )
@@ -427,15 +427,19 @@ with tabs[0]:
         n_inc_complied = diag["n_incomplete_complied"]
         # Phrased conditionally: the zero is a live finding, not a fixed claim. If a future
         # refresh introduces a compliant incomplete filing, this sentence must not lie.
+        pct_complied = n_inc_complied / n_inc * 100 if n_inc else 0.0
+        sep_pct = 100 - pct_complied
         if n_inc_complied == 0:
             headline_line = (
                 f"None of the {n_inc:,} incomplete filings is recorded as COMPLIED."
             )
         else:
+            # Deliberately NOT rounded to one decimal. At this magnitude a single
+            # decimal renders 0.04% as "0.0%", which is what makes a near-total
+            # separation look like a literal one.
             headline_line = (
-                f"{n_inc_complied:,} of {n_inc:,} incomplete filings are recorded as "
-                f"COMPLIED ({n_inc_complied / n_inc * 100:.1f}%) — this was 0% at the "
-                f"time of the Preliminary analysis, so the finding has changed."
+                f"Only {n_inc_complied:,} of {n_inc:,} incomplete filings — "
+                f"{pct_complied:.3f}% — are recorded as COMPLIED."
             )
         st.markdown(
             f"""
@@ -445,6 +449,10 @@ joint pattern points to a submission that was never completed, rather than five
 unrelated data gaps.
 
 **{headline_line}**
+
+That is near-total separation, not literal separation — the distinction matters,
+because "never" is a claim a single counterexample refutes while "{sep_pct:.2f}% of the
+time" survives a data refresh.
 
 So `complianceStatus` is partly a filing-completeness flag, not a pure measure of
 energy performance. That single fact reshapes how the compliance trend on the next
@@ -456,10 +464,12 @@ tabs should be read — and what a Midterm classifier can honestly be built on.
     st.subheader("Compliance rate — incomplete vs. complete filings")
     ct = diag["incomplete_crosstab_wide"]
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Complete filings — COMPLIED", f"{ct.loc[False, 'COMPLIED']:.1f}%")
-    k2.metric("Complete filings — NOT COMPLIED", f"{ct.loc[False, 'NOT COMPLIED']:.1f}%")
-    k3.metric("Incomplete filings — COMPLIED", f"{ct.loc[True, 'COMPLIED']:.1f}%")
-    k4.metric("Incomplete filings — NOT COMPLIED", f"{ct.loc[True, 'NOT COMPLIED']:.1f}%")
+    k1.metric("Complete filings — COMPLIED", f"{ct.loc[False, 'COMPLIED']:.2f}%")
+    k2.metric("Complete filings — NOT COMPLIED", f"{ct.loc[False, 'NOT COMPLIED']:.2f}%")
+    k3.metric("Incomplete filings — COMPLIED", f"{ct.loc[True, 'COMPLIED']:.2f}%",
+              help="Two decimals on purpose — at one decimal this rounds to 0.0% and "
+                   "reads as a literal zero when it is not one.")
+    k4.metric("Incomplete filings — NOT COMPLIED", f"{ct.loc[True, 'NOT COMPLIED']:.2f}%")
     st.caption(
         "Computed on the full dataset (Section 4.4), not the filtered subset, since it "
         "characterizes the data as a whole."
@@ -551,11 +561,22 @@ with tabs[2]:
         _pad_axis(fig, vol.values)
         st.plotly_chart(fig, width="stretch")
         if len(vol) >= 2:
+            # Share is computed against every complete filing, not just the plotted top 10,
+            # so the sentence cannot overstate dominance when the chart is filtered.
+            share = vol.iloc[0] / len(dff_seg) * 100 if len(dff_seg) else 0
+            ratio = vol.iloc[0] / vol.iloc[1]
+            if ratio >= 1.5:
+                lead = (f"{vol.index[0].title()} dominates by volume — {ratio:.1f}× the next "
+                        f"largest category ({vol.index[1].title()}), and {share:.0f}% of all "
+                        f"{len(dff_seg):,} complete filings in the current selection.")
+            else:
+                lead = (f"{vol.index[0].title()} leads at {share:.0f}% of all {len(dff_seg):,} "
+                        f"complete filings in the current selection, but only {ratio:.2f}× "
+                        f"{vol.index[1].title()} — no single type dominates this selection.")
             st.caption(
-                f"{vol.index[0].title()} dominates by volume — {vol.iloc[0] / vol.iloc[1]:.1f}× "
-                f"the next largest category ({vol.index[1].title()}). That imbalance is real "
-                f"context for the Midterm: a classifier trained on this data sees far more "
-                f"examples of one property type than of all the others combined."
+                lead + " Filing volume is real context for the Midterm: where one property "
+                "type is far more common, overall accuracy can look strong while performance "
+                "on the minority types stays poor."
             )
 
     st.divider()
@@ -623,11 +644,17 @@ with tabs[2]:
         fig.update_layout(height=max(380, 30 * len(med)), yaxis={"autorange": "reversed"})
         _pad_axis(fig, med.values)
         st.plotly_chart(fig, width="stretch")
-    st.caption(
-        "Offices and retail stores report roughly ten times the intensity per square foot of "
-        "self-storage or parking. Energy need here is a function of use, not efficiency — "
-        "which is exactly why percentiles below are computed within type."
-    )
+    if len(med) >= 2:
+        hi_name, hi_val = med.index[0].title(), med.iloc[0]
+        lo_name, lo_val = med.index[-1].title(), med.iloc[-1]
+        ratio = hi_val / lo_val if lo_val else float("nan")
+        st.caption(
+            f"{hi_name} reports the highest median intensity at {hi_val:,.1f} kBtu/ft², "
+            f"{ratio:.0f}× that of {lo_name} at {lo_val:,.1f}. Energy need here is a function "
+            f"of use, not efficiency — which is exactly why percentiles below are computed "
+            f"within type. Naming the leaders live rather than in fixed text, since which "
+            f"types appear depends on the sidebar selection."
+        )
 
     st.divider()
     st.subheader("Position — percentile within property type (6.4)")
