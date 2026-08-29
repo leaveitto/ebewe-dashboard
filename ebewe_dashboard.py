@@ -104,6 +104,19 @@ STRUCTURAL_PAIRS = {
 # ----------------------------------------------------------------------------
 # Cleaning pipeline (notebook Sections 3-5)
 # ----------------------------------------------------------------------------
+def _pad_axis(fig, values, axis="x", pad=0.18):
+    """Outside bar labels get clipped at the plot edge unless the axis is padded.
+    Called on every chart using textposition='outside'."""
+    finite = [v for v in values if pd.notna(v)]
+    if not finite:
+        return fig
+    hi, lo = max(finite), min(finite)
+    upper = hi + abs(hi) * pad if hi else 1
+    lower = min(0, lo)
+    fig.update_layout(**{f"{axis}axis": {"range": [lower, upper]}})
+    return fig
+
+
 def _age_bucket(age):
     if pd.isnull(age):
         return "UNKNOWN"
@@ -197,6 +210,17 @@ def load_and_clean(raw_bytes: bytes):
     )
     diag["incomplete_compliant_rate"] = float(
         df.loc[df["isIncompleteFiling"], "complianceStatus"].eq("COMPLIED").mean()
+    )
+    diag["n_incomplete_complied"] = int(
+        df.loc[df["isIncompleteFiling"], "complianceStatus"].eq("COMPLIED").sum()
+    )
+    # Wide form so each cell can be surfaced as its own metric rather than a
+    # dataframe whose "% of group" column gets truncated at narrow widths.
+    diag["incomplete_crosstab_wide"] = (
+        pd.crosstab(df["isIncompleteFiling"], df["complianceStatus"], normalize="index")
+        .mul(100).round(1)
+        .reindex(columns=["COMPLIED", "NOT COMPLIED"], fill_value=0.0)
+        .reindex(index=[False, True], fill_value=0.0)
     )
 
     # 4.5 target integrity, then locale fix, then the generic categorical fill
@@ -305,15 +329,21 @@ year_range = st.sidebar.select_slider(
 )
 
 all_types = sorted(t for t in df["propertyType"].unique() if t != "UNKNOWN")
-default_types = list(
-    df[~df["isIncompleteFiling"]]["propertyType"].value_counts().head(12).index
-)
-chosen_types = st.sidebar.multiselect(
+top_12 = list(df[~df["isIncompleteFiling"]]["propertyType"].value_counts().head(12).index)
+type_mode = st.sidebar.radio(
     "Property types (complete filings)",
-    options=all_types,
-    default=default_types,
-    help="Applies to segment-level views. Leave empty to include every type.",
+    ["Top 12 by filing count", "All types", "Choose specific types"],
+    help="Segment-level views only. Twelve chips pinned open crowds the sidebar, "
+         "so the common cases are presets.",
 )
+if type_mode == "Top 12 by filing count":
+    chosen_types = top_12
+elif type_mode == "All types":
+    chosen_types = []
+else:
+    chosen_types = st.sidebar.multiselect("Select types", options=all_types, default=[])
+    if not chosen_types:
+        st.sidebar.caption("No types selected — showing all.")
 
 st.sidebar.divider()
 st.sidebar.caption(f"Source file: `{source_label}`")
@@ -375,7 +405,7 @@ with tabs[0]:
     c1.metric("Total filings", f"{len(dff):,}")
     c2.metric("Compliance rate", f"{dff['isCompliant'].mean() * 100:.1f}%")
     c3.metric("Incomplete filings", f"{dff['isIncompleteFiling'].mean() * 100:.1f}%")
-    c4.metric("Median Site EUI", f"{dff['siteEui'].median():,.1f} kBtu/ft²")
+    c4.metric("Median Site EUI (kBtu/ft²)", f"{dff['siteEui'].median():,.1f}")
 
     left, right = st.columns([1, 1])
 
@@ -393,7 +423,20 @@ with tabs[0]:
 
     with right:
         st.subheader("The headline finding")
-        rate = diag["incomplete_compliant_rate"] * 100
+        n_inc = diag["n_incomplete"]
+        n_inc_complied = diag["n_incomplete_complied"]
+        # Phrased conditionally: the zero is a live finding, not a fixed claim. If a future
+        # refresh introduces a compliant incomplete filing, this sentence must not lie.
+        if n_inc_complied == 0:
+            headline_line = (
+                f"None of the {n_inc:,} incomplete filings is recorded as COMPLIED."
+            )
+        else:
+            headline_line = (
+                f"{n_inc_complied:,} of {n_inc:,} incomplete filings are recorded as "
+                f"COMPLIED ({n_inc_complied / n_inc * 100:.1f}%) — this was 0% at the "
+                f"time of the Preliminary analysis, so the finding has changed."
+            )
         st.markdown(
             f"""
 `isIncompleteFiling` flags records where **propertyType, yearBuilt, grossFloorArea,
@@ -401,7 +444,7 @@ occupancy, and entityResponsible are all missing together** — not independentl
 joint pattern points to a submission that was never completed, rather than five
 unrelated data gaps.
 
-**{rate:.1f}% of those incomplete filings are recorded as COMPLIED.**
+**{headline_line}**
 
 So `complianceStatus` is partly a filing-completeness flag, not a pure measure of
 energy performance. That single fact reshapes how the compliance trend on the next
@@ -411,7 +454,12 @@ tabs should be read — and what a Midterm classifier can honestly be built on.
 
     st.divider()
     st.subheader("Compliance rate — incomplete vs. complete filings")
-    st.dataframe(diag["incomplete_crosstab"], width="stretch", hide_index=True)
+    ct = diag["incomplete_crosstab_wide"]
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Complete filings — COMPLIED", f"{ct.loc[False, 'COMPLIED']:.1f}%")
+    k2.metric("Complete filings — NOT COMPLIED", f"{ct.loc[False, 'NOT COMPLIED']:.1f}%")
+    k3.metric("Incomplete filings — COMPLIED", f"{ct.loc[True, 'COMPLIED']:.1f}%")
+    k4.metric("Incomplete filings — NOT COMPLIED", f"{ct.loc[True, 'NOT COMPLIED']:.1f}%")
     st.caption(
         "Computed on the full dataset (Section 4.4), not the filtered subset, since it "
         "characterizes the data as a whole."
@@ -435,7 +483,8 @@ with tabs[1]:
         text="Missing %",
     )
     fig.update_layout(height=650, showlegend=False, xaxis_title="Missing (%)")
-    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+    _pad_axis(fig, miss["Missing %"])
     st.plotly_chart(fig, width="stretch")
     st.info(
         f"Five structural fields share an identical missing rate — they are missing on the "
@@ -460,15 +509,16 @@ with tabs[1]:
     )
 
     st.divider()
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Plausibility bounding (5.2)")
-        st.caption("Data-entry errors nulled at both ends — a 6.7-million kBtu/ft² reading is not an unusual building.")
-        st.dataframe(diag["plaus_report"], width="stretch", hide_index=True)
-    with c2:
-        st.subheader("IQR outlier flags (5.3)")
-        st.caption("Flagged, never removed. These are genuinely unusual but real buildings.")
-        st.dataframe(diag["outlier_report"], width="stretch", hide_index=True)
+    st.subheader("Plausibility bounding (5.2)")
+    st.caption(
+        "Data-entry errors nulled at both ends — a 6.7-million kBtu/ft² reading is not an "
+        "unusual building. Shown full width so the counts stay readable."
+    )
+    st.dataframe(diag["plaus_report"], width="stretch", hide_index=True)
+
+    st.subheader("IQR outlier flags (5.3)")
+    st.caption("Flagged, never removed. These are genuinely unusual but real buildings.")
+    st.dataframe(diag["outlier_report"], width="stretch", hide_index=True)
 
     st.markdown(
         f"Also corrected: **{diag['n_invalid_yearbuilt']} implausible `yearBuilt` values** "
@@ -489,6 +539,26 @@ with tabs[1]:
 # Tab 3 — Descriptive Stats
 # ----------------------------------------------------------------------------
 with tabs[2]:
+    st.subheader("Frequency — filing volume by property type (6.1)")
+    vol = dff_seg["propertyType"].value_counts().head(10)
+    if len(vol):
+        fig = px.bar(x=vol.values, y=vol.index, orientation="h",
+                     labels={"x": "Number of Filings", "y": ""}, text=vol.values)
+        fig.update_traces(marker_color=BLUE, textposition="outside",
+                          texttemplate="%{text:,}", cliponaxis=False)
+        fig.update_layout(height=max(380, 32 * len(vol)),
+                          yaxis={"autorange": "reversed"})
+        _pad_axis(fig, vol.values)
+        st.plotly_chart(fig, width="stretch")
+        if len(vol) >= 2:
+            st.caption(
+                f"{vol.index[0].title()} dominates by volume — {vol.iloc[0] / vol.iloc[1]:.1f}× "
+                f"the next largest category ({vol.index[1].title()}). That imbalance is real "
+                f"context for the Midterm: a classifier trained on this data sees far more "
+                f"examples of one property type than of all the others combined."
+            )
+
+    st.divider()
     st.subheader("Central tendency — mean vs. median (6.2)")
     st.caption(
         "Reported side by side deliberately: the gap between them is an honest indicator of "
@@ -504,13 +574,21 @@ with tabs[2]:
             "n (non-null)": int(dff[col].notna().sum()),
         })
     central = pd.DataFrame(rows)
-    c1, c2 = st.columns([1, 1])
-    c1.dataframe(central, width="stretch", hide_index=True)
+    st.dataframe(central, width="stretch", hide_index=True)
+    c2 = st.container()
     fig = go.Figure()
     fig.add_bar(name="Mean", x=central["Metric"], y=central["Mean"], marker_color=RED)
     fig.add_bar(name="Median", x=central["Metric"], y=central["Median"], marker_color=BLUE)
-    fig.update_layout(barmode="group", height=340, title="Gap = right-skew")
+    fig.update_layout(barmode="group", height=340,
+                      title="Gap between mean and median")
     c2.plotly_chart(fig, width="stretch")
+    st.caption(
+        "The first three run the same direction — mean above median, the signature of a "
+        "right-skewed distribution pulled up by a small number of very energy-intensive "
+        "buildings. `energyStarScore` runs the other way, mean *below* median, because it "
+        "is a bounded 1–100 percentile score rather than an unbounded physical quantity. "
+        "Reporting only the mean would misrepresent both cases, in opposite directions."
+    )
 
     st.divider()
     st.subheader("Dispersion — range and standard deviation (6.3)")
@@ -541,8 +619,9 @@ with tabs[2]:
         fig = px.bar(x=med.values, y=med.index, orientation="h",
                      labels={"x": "Median Site EUI (kBtu/ft²)", "y": ""},
                      text=med.round(1))
-        fig.update_traces(marker_color=GREEN, textposition="outside")
-        fig.update_layout(height=max(340, 28 * len(med)), yaxis={"autorange": "reversed"})
+        fig.update_traces(marker_color=GREEN, textposition="outside", cliponaxis=False)
+        fig.update_layout(height=max(380, 30 * len(med)), yaxis={"autorange": "reversed"})
+        _pad_axis(fig, med.values)
         st.plotly_chart(fig, width="stretch")
     st.caption(
         "Offices and retail stores report roughly ten times the intensity per square foot of "
@@ -599,10 +678,18 @@ with tabs[3]:
                           name="Within IQR fences", marker_color=BLUE)
         fig.add_histogram(x=eui.loc[eui["siteEuiIsOutlier"], "siteEui"], nbinsx=30,
                           name="Flagged outlier (not removed)", marker_color=RED)
-        fig.add_vline(x=eui["siteEui"].median(), line_dash="dash", line_color=ORANGE,
-                      annotation_text=f"Median {eui['siteEui'].median():,.1f}")
-        fig.add_vline(x=eui["siteEui"].mean(), line_dash="dot", line_color="black",
-                      annotation_text=f"Mean {eui['siteEui'].mean():,.1f}")
+        # Median and mean sit ~11 units apart on a 2,000-unit axis, so their labels
+        # overlap into illegible text if both are placed at the default position.
+        fig.add_vline(x=eui["siteEui"].median(), line_dash="dash", line_color=ORANGE)
+        fig.add_vline(x=eui["siteEui"].mean(), line_dash="dot", line_color="black")
+        fig.add_annotation(x=0.98, y=0.98, xref="paper", yref="paper",
+                           xanchor="right", showarrow=False, align="right",
+                           text=(f"<b>Median</b> {eui['siteEui'].median():,.1f}"
+                                 f" &nbsp;<span style='color:{ORANGE}'>— —</span><br>"
+                                 f"<b>Mean</b> {eui['siteEui'].mean():,.1f}"
+                                 f" &nbsp;<span style='color:black'>· · ·</span>"),
+                           bgcolor="rgba(255,255,255,0.85)", bordercolor="#CCCCCC",
+                           borderwidth=1, borderpad=6)
         fig.update_layout(barmode="overlay", height=420,
                           title=f"Site EUI (n={len(eui):,} reported values)",
                           xaxis_title="Site EUI (kBtu/ft²)", yaxis_title="Buildings",
@@ -627,11 +714,16 @@ with tabs[3]:
         colors = [RED if v < 80 else BLUE for v in comp_rate.values]
         fig = go.Figure(go.Bar(x=comp_rate.values, y=comp_rate.index, orientation="h",
                                marker_color=colors, text=comp_rate.round(1),
-                               texttemplate="%{text}%", textposition="outside"))
+                               texttemplate="%{text}%", textposition="outside",
+                               cliponaxis=False))
         fig.add_vline(x=comp_rate.mean(), line_dash="dash", line_color=ORANGE,
-                      annotation_text=f"Avg {comp_rate.mean():.1f}%")
+                      annotation_text=f"Avg {comp_rate.mean():.1f}%",
+                      annotation_position="bottom left")
+        fig.add_vline(x=80, line_dash="dot", line_color=RED,
+                      annotation_text="80% benchmark", annotation_position="top left")
         fig.update_layout(height=max(380, 30 * len(comp_rate)),
                           xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
+                          xaxis_range=[0, 108],
                           title="Red = below the 80% policy benchmark")
         st.plotly_chart(fig, width="stretch")
     st.caption(
@@ -640,7 +732,7 @@ with tabs[3]:
     )
 
     st.divider()
-    c1, c2 = st.columns(2)
+    c1, c2 = st.container(), st.container()
     with c1:
         st.subheader("Figure 3 — Median Site EUI by building age")
         aged = dff[dff["ageBucket"] != "UNKNOWN"]
@@ -649,12 +741,14 @@ with tabs[3]:
         fig = px.bar(x=AGE_ORDER, y=age_eui.values,
                      labels={"x": "Building Age Bucket", "y": "Median Site EUI (kBtu/ft²)"},
                      text=age_eui.round(1))
-        fig.update_traces(marker_color=BLUE, textposition="outside")
+        fig.update_traces(marker_color=BLUE, textposition="outside", cliponaxis=False)
         fig.update_layout(height=420)
+        _pad_axis(fig, age_eui.values, axis="y", pad=0.12)
         st.plotly_chart(fig, width="stretch")
         st.caption("Median, not mean — a handful of real but extreme buildings would "
                    "misrepresent the typical building of an era.")
-        st.write(age_n.rename("n per bucket"))
+        st.write(age_n.rename("n per bucket").to_frame().T)
+        st.divider()
     with c2:
         st.subheader("Figure 4 — Top 15 postal codes by total emissions")
         zips = (dff.groupby("postalCode")["co2Emissions"].sum()
@@ -735,7 +829,14 @@ with tabs[5]:
     masked = corr.mask(np.triu(np.ones(corr.shape), k=1).astype(bool))
     fig = px.imshow(masked, text_auto=True, zmin=-1, zmax=1,
                     color_continuous_scale="Blues", aspect="auto")
-    fig.update_layout(height=620, title="Lower triangle only — the upper half is redundant")
+    fig.update_layout(
+        height=640,
+        title="Lower triangle only — the upper half is redundant",
+        margin={"l": 140, "r": 40, "b": 160, "t": 60},
+        xaxis={"tickangle": -45, "side": "bottom", "automargin": True},
+        yaxis={"automargin": True},
+        coloraxis_colorbar={"thickness": 14},
+    )
     st.plotly_chart(fig, width="stretch")
 
     st.warning(
@@ -776,7 +877,7 @@ with tabs[5]:
                    .sort_values(ascending=False).round(3))
     fig = px.bar(x=target_corr.values, y=target_corr.index, orientation="h",
                  labels={"x": "r with isCompliant", "y": ""}, text=target_corr.values)
-    fig.update_traces(marker_color=BLUE, textposition="outside")
+    fig.update_traces(marker_color=BLUE, textposition="outside", cliponaxis=False)
     fig.update_layout(height=380, xaxis_range=[-0.1, 0.1],
                       yaxis={"autorange": "reversed"})
     st.plotly_chart(fig, width="stretch")
