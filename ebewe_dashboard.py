@@ -394,6 +394,7 @@ tabs = st.tabs([
     "Descriptive Stats",
     "Figures 1–4",
     "Compliance Trend",
+    "Responsible Entity",
     "Correlations",
 ])
 
@@ -830,26 +831,254 @@ with tabs[4]:
         c2.metric("Decline, complete filings only", f"{drop_complete:.1f} pts")
         c3.metric("Share attributable to filing completeness",
                   f"{share:.0f}%" if pd.notna(share) else "n/a")
-        st.info(
-            "Read the blue line alone and the story is that buildings are performing worse. "
-            "The green line says most of that gap is an artifact of how many filings were "
-            "never completed. Anyone reading the raw compliance trend as a performance "
-            "story is reading it wrong.",
-            icon="📉",
+        st.warning(
+            "**These are endpoint figures and they overstate their own precision.** The "
+            "building roster is not constant — the ordinance phased in by size, so early "
+            "years cover a fraction of the buildings later years do — and the final program "
+            "year may still be partially processed. On a fixed set of buildings the same "
+            "share ranges from roughly 40% to 84% depending on the cohort and end year "
+            "chosen. See the balanced-panel comparison below.",
+            icon="⚠️",
         )
 
     st.divider()
+    st.subheader("The same trend on a fixed set of buildings")
+    st.caption(
+        "Restricting to buildings observed in every year removes roster growth as an "
+        "explanation, so any remaining change is buildings behaving differently rather "
+        "than different buildings being present. The window starts where roster "
+        "coverage matures, matching Section 6.5.1 of the notebook."
+    )
+
+    # Balanced panel, anchored the same way as notebook Section 6.5.1: start at the
+    # first year the roster reaches 95% of its peak, rather than at the earliest year
+    # selected. Early program years cover a fraction of the buildings later ones do, so
+    # requiring presence in those years shrinks the panel to the earliest cohort only
+    # and yields different figures from the notebook for the same finding.
+    _roster = dff.groupby("programYear")["buildingId"].nunique()
+    _start = _roster[_roster >= 0.95 * _roster.max()].index[0]
+    _win = dff[dff["programYear"] >= _start]
+    _yrs = sorted(_win["programYear"].unique())
+    _per = _win.groupby("buildingId")["programYear"].nunique()
+    _panel = _per[_per == len(_yrs)].index
+
+    if len(_panel) < 50 or len(_yrs) < 4:
+        st.info(
+            f"Only {len(_panel):,} buildings appear in all {len(_yrs)} years from {_start} — "
+            "too few to compare. Widen the program-year range to see this view.",
+            icon="ℹ️",
+        )
+    else:
+        _g = _win[_win["buildingId"].isin(_panel)]
+        _gc = _g[~_g["isIncompleteFiling"]]
+        _bal = pd.DataFrame({
+            "Overall %": (_g.groupby("programYear")["isCompliant"].mean() * 100).round(1),
+            "Complete %": (_gc.groupby("programYear")["isCompliant"].mean() * 100).round(1),
+            "Incomplete %": (_g.groupby("programYear")["isIncompleteFiling"].mean() * 100).round(1),
+        })
+        _c = _bal["Complete %"]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=_bal.index, y=_bal["Complete %"], mode="lines+markers",
+                                 name="Complete filings only", line={"color": GREEN, "width": 3}))
+        fig.add_trace(go.Scatter(x=_bal.index, y=_bal["Overall %"], mode="lines+markers",
+                                 name="Overall", line={"color": BLUE, "width": 2, "dash": "dot"}))
+        fig.update_layout(height=420, xaxis_title="Program Year", yaxis_title="% Compliant",
+                          title=f"{len(_panel):,} buildings held constant, {_yrs[0]}–{_yrs[-1]}",
+                          legend={"orientation": "h", "y": -0.2})
+        st.plotly_chart(fig, width="stretch")
+
+        # The shape, stated from the data. The final-year fall is excluded when locating
+        # the break, since it is usually the steepest drop and is reported separately.
+        _d = np.diff(_c.values)
+        if len(_d) >= 3:
+            _bi = int(np.argmin(_d[:-1])) + 1
+            _mid = _c.iloc[_bi:-1]
+            k1, k2, k3 = st.columns(3)
+            k1.metric(f"Break at {_c.index[_bi]}", f"{_d[_bi-1]:+.1f} pts")
+            k2.metric(f"{_mid.index[0]}–{_mid.index[-1]}",
+                      f"{_mid.iloc[-1] - _mid.iloc[0]:+.1f} pts")
+            k3.metric(f"Final year ({_c.index[-1]})", f"{_d[-1]:+.1f} pts")
+            if _mid.iloc[-1] > _mid.iloc[0]:
+                st.success(
+                    f"With the building set held constant, compliance among complete filings "
+                    f"**improved** {_mid.iloc[-1] - _mid.iloc[0]:.1f} points between "
+                    f"{_mid.index[0]} and {_mid.index[-1]}. The series is a one-year break, a "
+                    f"multi-year recovery, and a final-year drop — not a steady decline. An "
+                    f"endpoint comparison conceals this because a line drawn between the first "
+                    f"and last points passes straight over the recovery.",
+                    icon="📈",
+                )
+
+        st.dataframe(_bal, width="stretch")
+
+    st.divider()
+    st.subheader("All filings, unbalanced roster")
     trend_table = pd.DataFrame({
         "Overall Compliance %": yearly_overall.round(1),
         "Compliance % (complete filings only)": yearly_complete.round(1),
         "Incomplete Filing %": yearly_incomplete.round(1),
+        "Buildings in roster": dff.groupby("programYear")["buildingId"].nunique(),
     })
     st.dataframe(trend_table, width="stretch")
+    st.caption(
+        "The roster column is why the endpoint comparison above needs care: where it grows, "
+        "a change in the compliance rate partly reflects a change in which buildings are "
+        "being measured."
+    )
 
 # ----------------------------------------------------------------------------
-# Tab 6 — Correlations (Figure 6 + Section 6.6)
+# Tab 6 — Responsible Entity (Section 6.7)
 # ----------------------------------------------------------------------------
 with tabs[5]:
+    st.subheader("Who files matters more than what is filed")
+    st.caption(
+        "`entityResponsible` records the organisation that submitted the benchmark report. "
+        "Incomplete filings are excluded throughout: they carry UNKNOWN and are almost never "
+        "compliant, so including them would manufacture the variation this view measures."
+    )
+
+    MIN_FILINGS = 100
+    _ag = (dff_complete[dff_complete["entityResponsible"] != "UNKNOWN"]
+           .groupby("entityResponsible")["isCompliant"]
+           .agg(["mean", "count"]).rename(columns={"mean": "compliance", "count": "filings"}))
+    _ag["compliance"] = (_ag["compliance"] * 100).round(1)
+    _big = _ag[_ag["filings"] >= MIN_FILINGS].sort_values("compliance")
+
+    if len(_big) < 3:
+        st.info(
+            f"Only {len(_big)} agents have {MIN_FILINGS}+ complete filings in the current "
+            "selection. Widen the filters to compare agents.",
+            icon="ℹ️",
+        )
+    else:
+        _base = dff_complete["isCompliant"].mean() * 100
+        _types = dff_seg.groupby("propertyType")["isCompliant"].mean() * 100
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"Agents with {MIN_FILINGS}+ filings", f"{len(_big):,}")
+        c2.metric("Spread across agents",
+                  f"{_big['compliance'].max() - _big['compliance'].min():.0f} pts")
+        c3.metric("Spread across property types",
+                  f"{_types.max() - _types.min():.0f} pts" if len(_types) > 1 else "n/a")
+        # The property-type spread is dominated by whichever single category sits below
+        # the benchmark; report it with and without, since the decomposition below shows
+        # that outlier is itself an operator effect.
+        if len(_types) > 2:
+            _wo = _types.drop(_types.idxmin())
+            st.caption(
+                f"Same comparison, same basis. The property-type spread is "
+                f"{_types.max() - _types.min():.0f} points, but almost all of it is one "
+                f"category ({_types.idxmin().title()}, {_types.min():.1f}%) — drop it and the "
+                f"remaining eleven span {_wo.max() - _wo.min():.0f} points. The responsible "
+                f"entity discriminates far more sharply than building function does, and the "
+                f"one category that looks like an exception is decomposed below."
+            )
+        else:
+            st.caption("Same comparison, same basis. The responsible entity discriminates "
+                       "far more sharply than building function does.")
+
+        _show = pd.concat([_big.head(10), _big.tail(10)]).drop_duplicates()
+        fig = go.Figure(go.Bar(
+            x=_show["compliance"], y=_show.index, orientation="h",
+            marker_color=[RED if v < _base else BLUE for v in _show["compliance"]],
+            text=_show["compliance"], texttemplate="%{text}%",
+            textposition="outside", cliponaxis=False,
+            customdata=_show["filings"],
+            hovertemplate="%{y}<br>%{x}% compliant<br>%{customdata:,} filings<extra></extra>"))
+        fig.add_vline(x=_base, line_dash="dash", line_color=ORANGE,
+                      annotation_text=f"Baseline {_base:.1f}%", annotation_position="top left")
+        fig.update_layout(height=max(420, 26 * len(_show)), xaxis_range=[0, 118],
+                          xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
+                          title="Lowest and highest compliance among high-volume agents")
+        st.plotly_chart(fig, width="stretch")
+
+        st.divider()
+        st.subheader("Does a pooled agent rate describe any actual year?")
+        _yrs = sorted(dff_complete["programYear"].unique())
+        if len(_yrs) >= 4:
+            _mid = _yrs[len(_yrs) // 2]
+            _rows = []
+            for a in _big.index:
+                g = dff_complete[dff_complete["entityResponsible"] == a]
+                e = g[g["programYear"] < _mid]["isCompliant"]
+                l = g[g["programYear"] >= _mid]["isCompliant"]
+                if len(e) >= 20 and len(l) >= 20:
+                    _rows.append({"Agent": a,
+                                  f"Before {_mid} %": round(e.mean() * 100, 1),
+                                  f"Before {_mid} n": len(e),
+                                  f"From {_mid} %": round(l.mean() * 100, 1),
+                                  f"From {_mid} n": len(l),
+                                  "Change": round((l.mean() - e.mean()) * 100, 1),
+                                  "Pooled %": round(g["isCompliant"].mean() * 100, 1)})
+            if _rows:
+                _reg = pd.DataFrame(_rows).sort_values("Change")
+                _broke = _reg[_reg["Change"].abs() >= 30]
+                st.dataframe(_reg, width="stretch", hide_index=True)
+                for _, r in _broke.iterrows():
+                    st.error(
+                        f"**{r['Agent']}** — {r[f'Before {_mid} %']:.1f}% across "
+                        f"{r[f'Before {_mid} n']:,} filings before {_mid}, then "
+                        f"{r[f'From {_mid} %']:.1f}% across {r[f'From {_mid} n']:,} filings after. "
+                        f"Its pooled rate of {r['Pooled %']:.1f}% describes neither period. A "
+                        f"static per-agent encoding would be wrong in both; a lagged feature — "
+                        f"the same building's compliance last year — would not.",
+                        icon="⚠️",
+                    )
+                if _broke.empty:
+                    st.caption("No agent changes by 30+ points across this window; the pooled "
+                               "rates can be read at face value.")
+        else:
+            st.caption("Widen the program-year range to compare agents across periods.")
+
+        st.divider()
+        st.subheader("Is the lowest property type a category or its operators?")
+        _flagged = _types[_types < 80].sort_values()
+        if _flagged.empty:
+            st.info("No property type falls below the 80% benchmark in the current selection.",
+                    icon="ℹ️")
+        else:
+            _t = _flagged.index[0]
+            _cat = dff_complete[dff_complete["propertyType"] == _t]
+            _ops = (_cat.groupby("entityResponsible")["isCompliant"]
+                    .agg(["mean", "count"]).sort_values("count", ascending=False))
+            _ops["mean"] = (_ops["mean"] * 100).round(1)
+            _drv = _ops[(_ops["count"] >= 100) & (_ops["mean"] < _base)].index.tolist()
+
+            if not _drv:
+                st.caption(f"No single large operator accounts for the {_t} deficit — it looks "
+                           "like a genuine property-type effect.")
+            else:
+                _isd = _cat["entityResponsible"].isin(_drv)
+                _sp = _cat.groupby(_isd)["isCompliant"].agg(["mean", "count"])
+                _sp["mean"] = (_sp["mean"] * 100).round(1)
+                _rest_r, _rest_n = _sp.loc[False, "mean"], _sp.loc[False, "count"]
+                _drv_r, _drv_n = _sp.loc[True, "mean"], _sp.loc[True, "count"]
+                _tot = _rest_n + _drv_n
+                _cf = (_rest_n * _rest_r + _drv_n * _base) / _tot
+
+                k1, k2, k3 = st.columns(3)
+                k1.metric(f"{_t} overall", f"{_cat['isCompliant'].mean()*100:.1f}%")
+                k2.metric(f"{len(_drv)} large operator(s)",
+                          f"{_drv_r:.1f}%", f"{_drv_n:,} filings", delta_color="off")
+                k3.metric("Everyone else in the category",
+                          f"{_rest_r:.1f}%", f"{_rest_n:,} filings", delta_color="off")
+                st.success(
+                    f"Those operators hold {_drv_n/_tot*100:.0f}% of the category. The remaining "
+                    f"filings sit {abs(_base-_rest_r):.1f} points from the {_base:.1f}% baseline "
+                    f"— against a {abs(_rest_r-_drv_r):.1f}-point gap between the two groups. "
+                    f"Had they filed at baseline, {_t} would sit at {_cf:.1f}% and would not fall "
+                    f"below the 80% line in Figure 2 at all. This is an operator effect "
+                    f"presenting as a building-function effect.",
+                    icon="🔍",
+                )
+                st.dataframe(_ops.head(8).rename(
+                    columns={"mean": "compliance %", "count": "filings"}), width="stretch")
+
+# ----------------------------------------------------------------------------
+# Tab 7 — Correlations (Figure 6 + Section 6.6)
+# ----------------------------------------------------------------------------
+with tabs[6]:
     st.subheader("Figure 6 — Correlation heatmap")
     corr_cols = CORR_COLS + ["isCompliant"]
     corr = dff[corr_cols].corr().round(2)
