@@ -3,7 +3,7 @@ EBEWE Program — Descriptive & Diagnostic Dashboard
 City of Los Angeles, Department of Building and Safety
 
 Preliminary phase deliverable. Every statistic and figure here is computed live
-from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v22.ipynb
+from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v26.ipynb
 (Sections 3-5 cleaning, Section 6 descriptive stats, Section 7 figures).
 Nothing is hardcoded, so a future data refresh flows straight through.
 
@@ -13,6 +13,8 @@ Run locally:   streamlit run ebewe_dashboard.py
 import io
 import glob
 import os
+
+import re
 
 import numpy as np
 import pandas as pd
@@ -26,16 +28,142 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 st.set_page_config(
     page_title="EBEWE Descriptive Dashboard",
-    page_icon="🏢",
+    page_icon="◧",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-BLUE = "#1565C0"
-DARK_BLUE = "#0D47A1"
-RED = "#D32F2F"
-GREEN = "#2E7D32"
-ORANGE = "#F57C00"
+# ---------------------------------------------------------------------------
+# Palette — one meaning per hue
+# ---------------------------------------------------------------------------
+# An earlier version used RED for eight unrelated things: NOT COMPLIED, high
+# missingness, the incompleteness series, the "Mean" bar, flagged outliers,
+# below-threshold property types, the reference line itself, and below-baseline
+# agents. A reader cannot learn what a colour means if it means eight things.
+#
+# Each token below has exactly one job. CIVIC and OCHRE are the encoding pair and
+# are distinguishable under deuteranopia and protanopia, which red/green is not —
+# and red/green would also import a moral reading ("green = good") into a chart
+# where the honest finding is that compliance measures filing completeness rather
+# than performance.
+INK = "#12161A"        # text, axes, reference lines
+SLATE = "#5C6771"      # secondary text; the default for any non-focal series
+PAPER = "#FAFAF8"      # page ground
+CIVIC = "#1F5C87"      # the measured quantity; COMPLIED
+OCHRE = "#B85C1E"      # the contrasting state: NOT COMPLIED, incomplete, below threshold
+VERDIGRIS = "#2F6F4F"  # one job only: a check that passed
+RULE = "#E3E5E2"       # hairlines, borders, dividers
+GRID = "#E8EAE6"       # chart gridlines — lighter than RULE so data sits in front
+
+# Ordered hues for charts that genuinely need more than two categories (the
+# per-tier series). Sequential in lightness so the series stay separable in
+# greyscale and in print.
+TIER_SEQUENCE = ["#12314A", "#1F5C87", "#4A8DB8", "#8FB4CC", "#C2D4E0"]
+
+# Retained names so existing call sites keep working; each now points at the
+# token whose meaning it was actually carrying.
+BLUE = CIVIC
+DARK_BLUE = "#12314A"
+RED = OCHRE
+GREEN = VERDIGRIS
+ORANGE = INK           # was the reference-line colour; a threshold is not an alarm
+
+# ----------------------------------------------------------------------------
+# Typography and page styling
+# ----------------------------------------------------------------------------
+# Source Serif for headings puts this in a document register rather than a
+# product one — it is a written analysis with figures, not an operations console.
+# IBM Plex Sans carries the data; its tabular figures keep decimal points aligned
+# in the metric rows, which Streamlit's default face does not.
+#
+# Mono is kept for dataset field names only. That is a semantic distinction the
+# analysis depends on: `propertyType` is a column in the file, "property type" is
+# the concept. Losing it would flatten a difference the prose relies on.
+st.markdown(
+    # The :root block is interpolated from the tokens above so the palette has a
+    # single source of truth. Defining it twice is how a stylesheet drifts away
+    # from the charts it is supposed to match.
+    f"""
+    <style>:root {{
+      --ink: {INK}; --slate: {SLATE}; --paper: {PAPER};
+      --civic: {CIVIC}; --ochre: {OCHRE}; --rule: {RULE};
+    }}</style>
+    """
+    """
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+      html, body, [class*="st-"], .stMarkdown, .stDataFrame {
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        color: var(--ink);
+      }
+      .stApp { background: var(--paper); }
+      h1, h2, h3, h4 {
+        font-family: "Source Serif 4", Georgia, serif;
+        font-weight: 600; color: var(--ink); letter-spacing: -0.01em;
+      }
+      h1 { font-size: 2.1rem; line-height: 1.15; }
+      h2 { font-size: 1.45rem; margin-top: 0.4rem; }
+      h3 { font-size: 1.15rem; }
+      /* Prose stays under ~80 characters; long callout lines are the hardest
+         thing to read in the whole app. */
+      .stMarkdown p, .stAlert p { max-width: 74ch; line-height: 1.55; }
+      code, .stMarkdown code {
+        font-family: "IBM Plex Mono", monospace; font-size: 0.86em;
+        background: #EFF1EE; color: var(--ink);
+        padding: 0.08em 0.32em; border-radius: 2px;
+      }
+      /* Metric values are the one place numbers should dominate, so they get
+         tabular figures and room to breathe. */
+      [data-testid="stMetricValue"] {
+        font-family: "IBM Plex Sans", sans-serif; font-weight: 600;
+        font-variant-numeric: tabular-nums; color: var(--ink);
+      }
+      [data-testid="stMetricLabel"] { color: var(--slate); font-size: 0.82rem; }
+      /* Callouts read as margin notes rather than product notifications: a rule
+         on the leading edge, no fill, no shadow. */
+      .stAlert {
+        background: transparent !important; border: 0 !important;
+        border-left: 2px solid var(--rule) !important; border-radius: 0 !important;
+        padding-left: 0.9rem !important; box-shadow: none !important;
+      }
+      hr { border-color: var(--rule); }
+      [data-testid="stSidebar"] { background: #F2F3F0; border-right: 1px solid var(--rule); }
+      .stTabs [data-baseweb="tab"] { font-size: 0.94rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Chart defaults, so every figure inherits the same face and axis weight rather
+# than each one re-specifying it.
+PLOT_FONT = {"family": "IBM Plex Sans, system-ui, sans-serif", "size": 12, "color": INK}
+PLOT_LAYOUT = {
+    "font": PLOT_FONT,
+    "paper_bgcolor": "rgba(0,0,0,0)",
+    "plot_bgcolor": "rgba(0,0,0,0)",
+    "xaxis": {"gridcolor": GRID, "zerolinecolor": GRID,
+              "linecolor": "#C9CEC7", "title": {"font": {"size": 12, "color": SLATE}}},
+    "yaxis": {"gridcolor": GRID, "zerolinecolor": GRID,
+              "linecolor": "#C9CEC7", "title": {"font": {"size": 12, "color": SLATE}}},
+    # title_font only — setting a title dict without "text" makes Plotly render the
+    # string "undefined" on every figure that never had a title of its own.
+    "title_font": {"family": "Source Serif 4, Georgia, serif", "size": 15, "color": INK},
+    "legend": {"font": {"size": 11, "color": SLATE}},
+}
+
+def chart(fig, **kwargs):
+    """Render a figure with the shared theme applied.
+
+    Every figure goes through here so the type face, grid weight and axis colour
+    are set in one place. update_layout merges rather than replaces, so a
+    figure's own range, tickangle or reversed axis survives this call.
+    """
+    fig.update_layout(**PLOT_LAYOUT)
+    kwargs.setdefault("width", "stretch")
+    return st.plotly_chart(fig, **kwargs)
+
 
 # ----------------------------------------------------------------------------
 # Pipeline constants — mirrored exactly from the notebook
@@ -80,6 +208,18 @@ NUMERIC_COLS = [
 
 STRUCTURAL_COLS = ["propertyType", "yearBuilt", "grossFloorArea", "occupancy",
                    "entityResponsible", "numberOfBuildings"]
+
+# French-locale propertyType labels. Section 4.5 already maps French Non/Oui in
+# energyStarCertEligibility; the same submissions carry French property types, which
+# split a category across two labels in every groupby. The source encodes the same
+# label two ways — a proper "a-grave" and a U+FFFD replacement character — so the map
+# is keyed on a form that strips non-alphanumerics rather than on literal strings.
+# Explicit map, not a fuzzy rule: only these three labels are touched. Mirrors §4.6.
+PROPERTY_TYPE_FR = {
+    "IMMEUBLE LOGEMENTS MULTIPLES": "MULTIFAMILY HOUSING",
+    "BUREAU": "OFFICE",
+    "STATIONNEMENT": "PARKING",
+}
 
 PLAUSIBILITY_BOUNDS = {
     "siteEui": {"floor": 0, "ceiling": 2000},
@@ -252,6 +392,23 @@ def load_and_clean(raw_bytes: bytes):
     # 4.6 standardize text
     for col in ["propertyType", "complianceStatus", "entityResponsible", "ladbsBuildingCategory"]:
         df[col] = df[col].astype(str).str.strip().str.upper()
+
+    # 4.6b French-locale propertyType labels, remapped before the field is used as a
+    # grouping key. Reported so the repair is visible rather than silent.
+    _pt_before = df["propertyType"].copy()
+    _pt_keys = df["propertyType"].map(
+        lambda v: re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9]", " ", str(v))).strip())
+    df["propertyType"] = np.where(_pt_keys.isin(PROPERTY_TYPE_FR),
+                                  _pt_keys.map(PROPERTY_TYPE_FR).fillna(df["propertyType"]),
+                                  df["propertyType"])
+    _pt_changed = _pt_before != df["propertyType"]
+    diag["locale_property_types"] = (
+        pd.DataFrame({"From": _pt_before[_pt_changed], "To": df.loc[_pt_changed, "propertyType"]})
+        .value_counts().rename("Filings").reset_index() if _pt_changed.any()
+        else pd.DataFrame(columns=["From", "To", "Filings"]))
+    diag["n_locale_property_types"] = int(_pt_changed.sum())
+    diag["property_types_before"] = int(_pt_before.nunique())
+    diag["property_types_after"] = int(df["propertyType"].nunique())
 
     # 4.6b two targeted repairs to entityResponsible, applied before the field is used
     # as a grouping key anywhere. .str.strip() removes whitespace but not other
@@ -492,7 +649,6 @@ if filtered:
     st.warning(
         f"Filtered to program years {year_range[0]}–{year_range[1]}. Figures reflect the "
         "filtered subset, not the full dataset.",
-        icon="⚠️",
     )
 
 tabs = st.tabs([
@@ -528,7 +684,7 @@ with tabs[0]:
             color_discrete_map={"COMPLIED": BLUE, "NOT COMPLIED": RED},
         )
         fig.update_layout(title="Compliance status, all filings", height=380)
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
 
     with right:
         st.subheader("The headline finding")
@@ -598,20 +754,22 @@ with tabs[1]:
         miss.sort_values("Missing %"),
         x="Missing %", y="Column", orientation="h",
         color=miss.sort_values("Missing %")["Missing %"] > 50,
-        color_discrete_map={True: RED, False: BLUE},
+        # The co-missing structural fields are the finding; everything else is context.
+        # An earlier version coloured the highest-missing columns red, which read as
+        # "bad data" — sparsity here is a property of the published source.
+        color_discrete_map={True: SLATE, False: CIVIC},
         text="Missing %",
     )
     fig.update_layout(height=650, showlegend=False, xaxis_title="Missing (%)")
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
     _pad_axis(fig, miss["Missing %"])
-    st.plotly_chart(fig, width="stretch")
+    chart(fig)
     _com = diag.get("comissing_fields", [])
     st.info(
         f"{len(_com)} fields share an identical missing mask — not merely a similar rate. "
         f"They are null on exactly the same {diag['n_incomplete']:,} records, with no "
         f"exceptions in either direction: {', '.join('`%s`' % c for c in _com)}. "
         f"That is the pattern captured as `isIncompleteFiling`.",
-        icon="🔍",
     )
 
     st.divider()
@@ -623,7 +781,7 @@ with tabs[1]:
     )
     fig.update_traces(line_color=RED)
     fig.update_layout(height=350, title="Share of filings that are structurally incomplete")
-    st.plotly_chart(fig, width="stretch")
+    chart(fig)
     st.caption(
         "Checked by year rather than once overall: a rising incomplete-filing rate makes a "
         "naive compliance trend look like buildings are performing worse when they may not be."
@@ -641,6 +799,19 @@ with tabs[1]:
     st.caption("Flagged, never removed. These are genuinely unusual but real buildings.")
     st.dataframe(diag["outlier_report"], width="stretch", hide_index=True)
 
+    if diag.get("n_locale_property_types"):
+        st.markdown("**French-locale property types**")
+        st.caption(
+            f"{diag['n_locale_property_types']} filing(s) carried French labels for a property "
+            f"type that also exists in English, so one category was split across two labels in "
+            f"every grouping. The published file encodes the same French label two ways — once "
+            f"with a proper accent and once with a replacement character — so the map is keyed "
+            f"on a form that ignores non-alphanumerics rather than on literal strings. Distinct "
+            f"property types: {diag['property_types_before']} before, "
+            f"{diag['property_types_after']} after."
+        )
+        st.dataframe(diag["locale_property_types"], width="stretch", hide_index=True)
+
     st.markdown(
         f"Also corrected: **{diag['n_invalid_yearbuilt']} implausible `yearBuilt` values** "
         f"nulled before `buildingAge` was derived, and **{diag['n_locale_fixed']} French-locale "
@@ -651,7 +822,6 @@ with tabs[1]:
         st.success(
             f"Target integrity check passed: 0 missing `complianceStatus` values. "
             f"The classification target is deliberately excluded from generic fill logic.",
-            icon="✅",
         )
     else:
         st.error(f"{diag['missing_target']} missing complianceStatus values — resolve before modeling.")
@@ -710,7 +880,7 @@ with tabs[1]:
         fig.update_traces(marker_color=BLUE, texttemplate="%{text:.1f}%",
                           textposition="outside", cliponaxis=False)
         fig.update_layout(height=420, xaxis_range=[0, 100], yaxis_title="")
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
 
         # Fields never plausibility-bounded still carry the errors 5.2 exists to remove.
         unb = av[~av["Field"].isin(PLAUSIBILITY_BOUNDS.keys())].copy()
@@ -722,7 +892,6 @@ with tabs[1]:
                             for r in bad.itertuples())
                 + ". Read their medians and quartiles; do not read their means or standard "
                   "deviations. Any modelling use must extend the bounding first.",
-                icon="⚠️",
             )
 
         water = av[av["Field"].str.contains("ater")]
@@ -733,7 +902,6 @@ with tabs[1]:
                 f"{water[water['Present %'] < 25]['Present %'].max():.1f}%. The published data "
                 "supports aggregate water analysis but not the indoor/outdoor breakdown — a "
                 "property of the source, not a scoping decision.",
-                icon="💧",
             )
 
     if diag.get("pctdiff_n"):
@@ -746,7 +914,6 @@ with tabs[1]:
                 "differ by 0.10, which is rounding at the source. Site and source energy differ "
                 "by definition, so two identical columns indicate a publishing artefact. Using "
                 "both in a model double-counts one measurement.",
-                icon="🔁",
             )
 
 # ----------------------------------------------------------------------------
@@ -767,7 +934,7 @@ with tabs[2]:
         fig.update_layout(height=max(380, 32 * len(vol)),
                           yaxis={"autorange": "reversed"})
         _pad_axis(fig, vol.values)
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
         if len(_vol_all) > len(vol):
             st.caption(
                 f"Showing the {len(vol)} largest of {len(_vol_all)} types in the current "
@@ -812,7 +979,8 @@ with tabs[2]:
     st.dataframe(central, width="stretch", hide_index=True)
     c2 = st.container()
     fig = go.Figure()
-    fig.add_bar(name="Mean", x=central["Metric"], y=central["Mean"], marker_color=RED)
+    # Mean and median are two estimators, not a good one and a bad one.
+    fig.add_bar(name="Mean", x=central["Metric"], y=central["Mean"], marker_color=SLATE)
     fig.add_bar(name="Median", x=central["Metric"], y=central["Median"], marker_color=BLUE)
     fig.update_layout(barmode="group", height=340,
                       title="Gap between mean and median")
@@ -857,7 +1025,7 @@ with tabs[2]:
         fig.update_traces(marker_color=GREEN, textposition="outside", cliponaxis=False)
         fig.update_layout(height=max(380, 30 * len(med)), yaxis={"autorange": "reversed"})
         _pad_axis(fig, med.values)
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
     if len(med) >= 2:
         hi_name, hi_val = med.index[0].title(), med.iloc[0]
         lo_name, lo_val = med.index[-1].title(), med.iloc[-1]
@@ -935,13 +1103,13 @@ with tabs[3]:
                           title=f"Site EUI (n={len(eui):,} reported values)",
                           xaxis_title="Site EUI (kBtu/ft²)", yaxis_title="Buildings",
                           legend={"orientation": "h", "y": -0.25})
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
     with c2:
         fig = px.histogram(x=np.log1p(eui["siteEui"].clip(lower=0)), nbins=60)
         fig.update_traces(marker_color=DARK_BLUE)
         fig.update_layout(height=420, title="Log-transformed (viewing aid only)",
                           xaxis_title="log(1 + Site EUI)", yaxis_title="Buildings")
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
     st.caption(
         "The log panel redistributes visual mass without altering a single underlying value — "
         "no `siteEui` value in the dataframe is modified by this view."
@@ -963,13 +1131,13 @@ with tabs[3]:
         fig.add_vline(x=comp_rate.mean(), line_dash="dash", line_color=ORANGE,
                       annotation_text=f"Avg {comp_rate.mean():.1f}%",
                       annotation_position="bottom left")
-        fig.add_vline(x=80, line_dash="dot", line_color=RED,
+        fig.add_vline(x=80, line_dash="dot", line_color=INK,
                       annotation_text="80% reference line", annotation_position="top left")
         fig.update_layout(height=max(380, 30 * len(comp_rate)),
                           xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                           xaxis_range=[0, 108],
-                          title="Red = below the 80% reference line")
-        st.plotly_chart(fig, width="stretch")
+                          title="Below the 80% reference line is marked in ochre")
+        chart(fig)
     st.caption(
         "The 80% line is a fixed reading aid chosen for this analysis, not a target set by "
         "the EBEWE ordinance — the ordinance sets filing deadlines and per-building fees, "
@@ -996,7 +1164,7 @@ with tabs[3]:
         fig.update_traces(marker_color=BLUE, textposition="outside", cliponaxis=False)
         fig.update_layout(height=420)
         _pad_axis(fig, age_eui.values, axis="y", pad=0.12)
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
         st.caption("Median, not mean — a handful of real but extreme buildings would "
                    "misrepresent the typical building of an era.")
         st.write(age_n.rename("n per bucket").to_frame().T)
@@ -1018,7 +1186,7 @@ with tabs[3]:
                              "y": "Postal Code"})
         fig.update_traces(marker_color=GREEN)
         fig.update_layout(height=560, yaxis={"autorange": "reversed", "type": "category"})
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
         st.caption(f"Total, not average — this view is about where retrofit and enforcement "
                    f"resources should go, which depends on total carbon impact. The bars sum "
                    f"every filing from {_yr_lo} to {_yr_hi} — {_n_bldg:,} buildings at "
@@ -1045,14 +1213,14 @@ with tabs[4]:
                              marker_symbol="triangle-up"), secondary_y=False)
     fig.add_trace(go.Scatter(x=yearly_incomplete.index, y=yearly_incomplete.values,
                              mode="lines+markers", name="% Incomplete Filing",
-                             line={"color": RED, "width": 2, "dash": "dash"},
+                             line={"color": OCHRE, "width": 2, "dash": "dash"},
                              marker_symbol="square"), secondary_y=True)
     fig.update_yaxes(title_text="% Compliant", secondary_y=False)
     fig.update_yaxes(title_text="% Incomplete Filing", secondary_y=True,
                      color=RED, showgrid=False)
     fig.update_layout(height=480, xaxis_title="Program Year",
                       legend={"orientation": "h", "y": -0.2})
-    st.plotly_chart(fig, width="stretch")
+    chart(fig)
     st.caption(
         "The three series are overlaid because the finding *is* the gap between them, and "
         "the way that gap widens as the incomplete-filing rate climbs."
@@ -1075,7 +1243,6 @@ with tabs[4]:
             "year may still be partially processed. On a fixed set of buildings the same "
             "share ranges from roughly 40% to 84% depending on the cohort and end year "
             "chosen. See the balanced-panel comparison below.",
-            icon="⚠️",
         )
 
     st.divider()
@@ -1103,7 +1270,6 @@ with tabs[4]:
         st.info(
             f"Only {len(_panel):,} buildings appear in all {len(_yrs)} years from {_start} — "
             "too few to compare. Widen the program-year range to see this view.",
-            icon="ℹ️",
         )
     else:
         _g = _win[_win["buildingId"].isin(_panel)]
@@ -1123,7 +1289,7 @@ with tabs[4]:
         fig.update_layout(height=420, xaxis_title="Program Year", yaxis_title="% Compliant",
                           title=f"{len(_panel):,} buildings held constant, {_yrs[0]}–{_yrs[-1]}",
                           legend={"orientation": "h", "y": -0.2})
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
 
         # The shape, stated from the data. The final-year fall is excluded when locating
         # the break, since it is usually the steepest drop and is reported separately.
@@ -1144,7 +1310,6 @@ with tabs[4]:
                     f"multi-year recovery, and a final-year drop — not a steady decline. An "
                     f"endpoint comparison conceals this because a line drawn between the first "
                     f"and last points passes straight over the recovery.",
-                    icon="📈",
                 )
 
         st.dataframe(_bal, width="stretch")
@@ -1209,7 +1374,6 @@ with tabs[5]:
         st.info(
             f"Only one coverage tier in the current selection ({_bands[0] if _bands else 'none'}), "
             "so there is no cross-tier comparison to make. Widen the filters.",
-            icon="ℹ️",
         )
     else:
         _all = (dff.groupby("sizeBand")["isCompliant"].mean() * 100).reindex(_bands)
@@ -1235,7 +1399,7 @@ with tabs[5]:
                               xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                               title="A. Compliance by coverage tier",
                               legend={"orientation": "h", "y": -0.2})
-            st.plotly_chart(fig, width="stretch")
+            chart(fig)
         with c2:
             fig = go.Figure(go.Bar(y=_bands, x=_inc.values, orientation="h",
                                    marker_color=RED, text=_inc.round(1),
@@ -1247,7 +1411,7 @@ with tabs[5]:
                               xaxis_title="% of filings structurally incomplete",
                               yaxis={"autorange": "reversed"},
                               title="B. Filing incompleteness by coverage tier")
-            st.plotly_chart(fig, width="stretch")
+            chart(fig)
 
         # The conclusion holds only if the spread genuinely collapses. State it either way.
         if _sa > 0 and _sc < _sa / 2:
@@ -1259,7 +1423,6 @@ with tabs[5]:
                 f"{_inc.max():.1f}% for {_inc.idxmax()}. Because incomplete filings are almost "
                 f"never compliant, that pattern surfaces in the headline rate as though it were "
                 f"a difference in performance.",
-                icon="🔍",
             )
         else:
             st.info(
@@ -1267,7 +1430,6 @@ with tabs[5]:
                 f"({_sa:.1f} to {_sc:.1f} points). Coverage tier is associated with compliance "
                 f"beyond its association with filing completeness, so the two panels are "
                 f"separate findings rather than one mechanism.",
-                icon="ℹ️",
             )
 
         st.divider()
@@ -1281,13 +1443,19 @@ with tabs[5]:
                                 values="isIncompleteFiling", aggfunc="mean") * 100).round(1)
         if len(_piv) >= 2 and _piv.shape[1] >= 2:
             fig = go.Figure()
-            for band in _piv.columns:
-                fig.add_trace(go.Scatter(x=_piv.index, y=_piv[band], mode="lines+markers",
-                                         name=band))
+            for _i, band in enumerate(_piv.columns):
+                # Coverage tier is ordered by building size, so the series take an
+                # ordered ramp rather than Plotly's categorical cycle — which put an
+                # arbitrary red beside an arbitrary green on a size variable and
+                # invited a good/bad reading of what is just "bigger" and "smaller".
+                fig.add_trace(go.Scatter(
+                    x=_piv.index, y=_piv[band], mode="lines+markers", name=band,
+                    line={"color": TIER_SEQUENCE[_i % len(TIER_SEQUENCE)], "width": 2},
+                    marker={"size": 6}))
             fig.update_layout(height=420, xaxis_title="Program Year",
                               yaxis_title="% structurally incomplete",
                               legend={"orientation": "h", "y": -0.25})
-            st.plotly_chart(fig, width="stretch")
+            chart(fig)
 
             _yoy = _piv.diff()
             _rose = (_yoy > 0).sum(axis=1)
@@ -1305,7 +1473,6 @@ with tabs[5]:
             "`isCityOwned` and `sizeBand` are derived from this field and are available on "
             "incomplete filings, which makes them the only structural features usable across "
             "all filings rather than the complete subset alone.",
-            icon="🧩",
         )
 
 # ----------------------------------------------------------------------------
@@ -1330,7 +1497,6 @@ with tabs[6]:
         st.info(
             f"Only {len(_big)} agents have {MIN_FILINGS}+ complete filings in the current "
             "selection. Widen the filters to compare agents.",
-            icon="ℹ️",
         )
     else:
         _base = dff_complete["isCompliant"].mean() * 100
@@ -1383,12 +1549,12 @@ with tabs[6]:
             textposition="outside", cliponaxis=False,
             customdata=_show["filings"],
             hovertemplate="%{y}<br>%{x}% compliant<br>%{customdata:,} filings<extra></extra>"))
-        fig.add_vline(x=_base, line_dash="dash", line_color=ORANGE,
+        fig.add_vline(x=_base, line_dash="dash", line_color=INK,
                       annotation_text=f"Baseline {_base:.1f}%", annotation_position="top left")
         fig.update_layout(height=max(420, 26 * len(_show)), xaxis_range=[0, 118],
                           xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                           title="Lowest and highest compliance among high-volume agents")
-        st.plotly_chart(fig, width="stretch")
+        chart(fig)
 
         st.divider()
         st.subheader("Does a pooled agent rate describe any actual year?")
@@ -1420,7 +1586,6 @@ with tabs[6]:
                         f"Its pooled rate of {r['Pooled %']:.1f}% describes neither period. A "
                         f"static per-agent encoding would be wrong in both; a lagged feature — "
                         f"the same building's compliance last year — would not.",
-                        icon="⚠️",
                     )
                 if _broke.empty:
                     st.caption("No agent changes by 30+ points across this window; the pooled "
@@ -1433,7 +1598,7 @@ with tabs[6]:
         _flagged = _types[_types < 80].sort_values()
         if _flagged.empty:
             st.info("No property type falls below the 80% reference line in the current "
-                    "selection.", icon="ℹ️")
+                    "selection.")
         else:
             _t = _flagged.index[0]
             _cat = dff_complete[dff_complete["propertyType"] == _t]
@@ -1480,7 +1645,6 @@ with tabs[6]:
                     f"below the 80% reference line in Figure 2 at all. This is an operator "
                     f"effect "
                     f"presenting as a building-function effect.",
-                    icon="🔍",
                 )
                 _rows = [f"{sh:.0%} ({_base - sh*_deficit:.1f}%): {len(a)} operator(s)"
                          f" — {', '.join(a) if a else 'none'}"
@@ -1535,8 +1699,7 @@ with tabs[6]:
         _movers = list(_broke["Agent"]) if "_broke" in dir() and len(_broke) else []
 
         if _known["type"].nunique() < 2:
-            st.info("Too few classified agents in the current selection to compare filer types.",
-                    icon="ℹ️")
+            st.info("Too few classified agents in the current selection to compare filer types.")
         else:
             def _by_type(exclude=()):
                 rows = []
@@ -1604,7 +1767,6 @@ with tabs[6]:
                         + f" Filer type is not a viable low-cardinality substitute: a model "
                           f"must carry agent identity, with high-volume agents retained and "
                           f"the rest bucketed.",
-                        icon="⚠️",
                     )
                     st.caption(
                         f"Reported for completeness: the widest gap between any two filer "
@@ -1644,7 +1806,7 @@ with tabs[7]:
         yaxis={"automargin": True},
         coloraxis_colorbar={"thickness": 14},
     )
-    st.plotly_chart(fig, width="stretch")
+    chart(fig)
 
     st.warning(
         "**Not all strong correlations are the same kind of finding.** `siteEui` ↔ `sourceEui` "
@@ -1653,7 +1815,6 @@ with tabs[7]:
         "(r ≈ 0.98) is *structural*: GHG intensity is calculated from the same energy data Site "
         "EUI already represents. No amount of cleaning will reduce the second one, and treating "
         "it as a data-quality problem would be a mistake.",
-        icon="⚠️",
     )
 
     st.subheader("Flagged pairs (|r| > 0.80)")
@@ -1689,18 +1850,17 @@ with tabs[7]:
     fig.update_traces(marker_color=BLUE, textposition="outside", cliponaxis=False)
     fig.update_layout(height=380, xaxis_range=[-0.1, 0.1],
                       yaxis={"autorange": "reversed"})
-    st.plotly_chart(fig, width="stretch")
+    chart(fig)
     st.error(
         "Every continuous feature correlates with `isCompliant` at |r| < 0.05. Combined with "
         "the finding that `isIncompleteFiling` almost perfectly separates the two classes, "
         "compliance looks driven by categorical and structural factors — property type, "
         "responsible entity, filing completeness — rather than by energy performance itself. "
         "A Midterm model built only on continuous energy metrics is unlikely to perform well.",
-        icon="🎯",
     )
 
 st.divider()
 st.caption(
-    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v22.ipynb "
+    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v26.ipynb "
     "(Sections 3–7) · data: Los Angeles Open Data Portal, LADBS (public domain)"
 )
