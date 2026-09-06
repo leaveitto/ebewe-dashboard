@@ -236,6 +236,28 @@ def load_and_clean(raw_bytes: bytes):
     for col in ["propertyType", "complianceStatus", "entityResponsible", "ladbsBuildingCategory"]:
         df[col] = df[col].astype(str).str.strip().str.upper()
 
+    # 4.6b two targeted repairs to entityResponsible, applied before the field is used
+    # as a grouping key anywhere. .str.strip() removes whitespace but not other
+    # characters, so a value such as "_LANDMARK PROPERTY SERVICES" survives it.
+    _before = df["entityResponsible"].copy()
+    df["entityResponsible"] = df["entityResponsible"].str.replace(
+        r"^[^A-Z0-9]+|[^A-Z0-9]+$", "", regex=True)
+    diag["n_punct_stripped"] = int((_before != df["entityResponsible"]).sum())
+
+    # Explicit alias map rather than a normalisation rule: a rule that merged on legal
+    # form alone would also merge distinct firms sharing a stem. Each entry is a
+    # judgement that can be read and reversed.
+    ENTITY_ALIASES = {"BAY EFFICIENCY, LLC": "BAY EFFICIENCY"}
+    _present = {k: v for k, v in ENTITY_ALIASES.items()
+                if k in set(df["entityResponsible"].unique())}
+    diag["aliases_applied"] = [
+        (k, v, int((df["entityResponsible"] == k).sum()), int((df["entityResponsible"] == v).sum()))
+        for k, v in _present.items()]
+    if _present:
+        df["entityResponsible"] = df["entityResponsible"].replace(_present)
+    diag["n_entities"] = int(df.loc[df["entityResponsible"] != "UNKNOWN",
+                                    "entityResponsible"].nunique())
+
     # 5.1 sanity-bound yearBuilt, derive buildingAge
     current_year = df["programYear"].max()
     invalid_year = (df["yearBuilt"] < 1800) | (df["yearBuilt"] > current_year)
@@ -274,6 +296,74 @@ def load_and_clean(raw_bytes: bytes):
     df["ageBucket"] = df["buildingAge"].apply(_age_bucket)
     df["isCompliant"] = (df["complianceStatus"] == "COMPLIED").astype(int)
     df["postalCode"] = df["postalCode"].astype(str).str.split(".").str[0]
+
+    # 4.7 values in entityResponsible that cannot be company names. Reported, never
+    # repaired: the true entity is unrecoverable, and assigning them to UNKNOWN would
+    # merge them with the incomplete filings, which are almost never compliant.
+    _ent = df.loc[df["entityResponsible"] != "UNKNOWN", "entityResponsible"]
+    _counts = _ent.value_counts()
+    _strong = {
+        "Numeric only": lambda x: x.isdigit(),
+        "No letters": lambda x: not any(c.isalpha() for c in x),
+        "Underscore": lambda x: "_" in x,
+    }
+    _flag = {}
+    for lbl, test in _strong.items():
+        for v in _counts.index:
+            if test(str(v)):
+                _flag.setdefault(v, []).append(lbl)
+    diag["nonname"] = (pd.DataFrame(
+        [{"Value": v, "Flagged as": ", ".join(k), "Filings": int(_counts[v])}
+         for v, k in _flag.items()]).sort_values("Filings", ascending=False)
+        if _flag else pd.DataFrame(columns=["Value", "Flagged as", "Filings"]))
+    diag["nonname_share"] = (diag["nonname"]["Filings"].sum() / _counts.sum() * 100
+                             if len(diag["nonname"]) else 0.0)
+
+    # 4.8 labels that may refer to one organisation. Detected, not merged.
+    _SUFFIX = (r"\b(LLC|L\.L\.C\.|INC|INC\.|CORP|CORPORATION|CO|COMPANY|LP|LLP|LTD|GROUP|"
+               r"HOLDINGS|PARTNERS|ENTERPRISES|PROPERTIES|MANAGEMENT|SERVICES|ASSOCIATES|"
+               r"TRUST|REIT)\b")
+    _norm = pd.DataFrame({"raw": _counts.index, "filings": _counts.values})
+    _norm["key"] = (_norm["raw"].astype(str).str.upper()
+                    .str.replace(r"[^A-Z0-9 ]", " ", regex=True)
+                    .str.replace(_SUFFIX, " ", regex=True)
+                    .str.replace(r"\s+", " ", regex=True).str.strip())
+    _norm = _norm[_norm["key"] != ""]
+    _grp = _norm.groupby("key").filter(lambda g: len(g) > 1)
+    diag["dupe_groups"] = int(_grp["key"].nunique()) if len(_grp) else 0
+    diag["dupe_labels"] = int(len(_grp))
+    diag["dupe_share"] = (_grp["filings"].sum() / _counts.sum() * 100) if len(_grp) else 0.0
+    diag["dupe_detail"] = (_grp.sort_values(["key", "filings"], ascending=[True, False])
+                           if len(_grp) else pd.DataFrame(columns=["raw", "filings", "key"]))
+
+    # 6.8 availability of the fields not described elsewhere, plus the duplicate check
+    _UND = ["occupancy", "numberOfBuildings", "totalWaterUse", "weatherNormSiteEui",
+            "weatherNormSourceEui", "pctDiffNationalSourceEui", "pctDiffNationalSiteEui",
+            "indoorWaterUse", "indoorWaterUseIntensity", "outdoorWaterUse"]
+    _av = []
+    for c in _UND:
+        if c in df.columns:
+            n = int(df[c].notna().sum())
+            med = df[c].dropna().median() if n else np.nan
+            mx = df[c].max() if n else np.nan
+            _av.append({"Field": c, "Present": n, "Present %": round(n / len(df) * 100, 1),
+                        "Median": round(med, 2) if pd.notna(med) else np.nan,
+                        "Max": mx,
+                        "Max / median": (abs(mx / med) if med else np.nan)})
+    diag["availability"] = pd.DataFrame(_av).sort_values("Present %", ascending=False)
+
+    a, b = "pctDiffNationalSiteEui", "pctDiffNationalSourceEui"
+    if a in df.columns and b in df.columns:
+        _both = df[[a, b]].dropna()
+        diag["pctdiff_n"] = int(len(_both))
+        diag["pctdiff_same"] = int((_both[a] == _both[b]).sum()) if len(_both) else 0
+
+    # 6.9 structural features from the coverage tier — populated on every filing,
+    # unlike propertyType, so usable across the whole dataset.
+    _cat = df["ladbsBuildingCategory"]
+    df["isCityOwned"] = _cat.str.contains("CITY OWNED", na=False)
+    df["sizeBand"] = (_cat.str.replace(r"\s*\(CITY OWNED BUILDINGS?\)", "", regex=True)
+                          .str.strip())
 
     return df, diag
 
@@ -394,6 +484,7 @@ tabs = st.tabs([
     "Descriptive Stats",
     "Figures 1–4",
     "Compliance Trend",
+    "Coverage Tier",
     "Responsible Entity",
     "Correlations",
 ])
@@ -545,6 +636,99 @@ with tabs[1]:
         )
     else:
         st.error(f"{diag['missing_target']} missing complianceStatus values — resolve before modeling.")
+
+    st.divider()
+    st.subheader("Entity field repairs and audits")
+    st.caption(
+        "`entityResponsible` carries more signal about compliance than any other field "
+        "(see the Responsible Entity tab), which is reason to check what it actually holds."
+    )
+
+    r1, r2, r3 = st.columns(3)
+    r1.metric("Distinct entities", f"{diag.get('n_entities', 0):,}")
+    r2.metric("Filings with punctuation stripped", f"{diag.get('n_punct_stripped', 0):,}")
+    r3.metric("Aliases merged", f"{len(diag.get('aliases_applied', []))}")
+    for src_name, dst_name, n_src, n_dst in diag.get("aliases_applied", []):
+        st.caption(f"Merged **{src_name}** ({n_src:,} filings) into **{dst_name}** "
+                   f"({n_dst:,}) — one firm previously counted as two agents.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Values that cannot be company names**")
+        if len(diag.get("nonname", [])):
+            st.dataframe(diag["nonname"], width="stretch", hide_index=True)
+            st.caption(
+                f"{diag['nonname_share']:.2f}% of named-entity filings. Not repaired: the true "
+                "entity is unrecoverable, and assigning these to UNKNOWN would merge them with "
+                "the incomplete filings, which are almost never compliant. A code groups as "
+                "reliably as a name; only readability is lost."
+            )
+        else:
+            st.caption("None detected in this refresh.")
+    with c2:
+        st.markdown("**Labels that may be one organisation**")
+        st.metric("Candidate groups", f"{diag.get('dupe_groups', 0):,}",
+                  f"{diag.get('dupe_labels', 0):,} labels, {diag.get('dupe_share', 0):.1f}% of filings",
+                  delta_color="off")
+        st.caption(
+            "Detected by normalising away punctuation and legal form. Reported, not merged — "
+            "a shared key shows two names are similar, not that two organisations are the same."
+        )
+        if len(diag.get("dupe_detail", [])):
+            with st.expander("Show candidate groups"):
+                st.dataframe(diag["dupe_detail"], width="stretch", hide_index=True)
+
+    st.divider()
+    st.subheader("Availability of fields not described elsewhere")
+    st.caption(
+        "Ten raw columns pass through the pipeline without appearing in the analysis. "
+        "Recording their availability separates a deliberate exclusion from an oversight."
+    )
+    av = diag.get("availability", pd.DataFrame())
+    if len(av):
+        fig = px.bar(av.sort_values("Present %"), x="Present %", y="Field", orientation="h",
+                     text="Present %")
+        fig.update_traces(marker_color=BLUE, texttemplate="%{text:.1f}%",
+                          textposition="outside", cliponaxis=False)
+        fig.update_layout(height=420, xaxis_range=[0, 100], yaxis_title="")
+        st.plotly_chart(fig, width="stretch")
+
+        # Fields never plausibility-bounded still carry the errors 5.2 exists to remove.
+        unb = av[~av["Field"].isin(PLAUSIBILITY_BOUNDS.keys())].copy()
+        bad = unb[unb["Max / median"] > 1000]
+        if len(bad):
+            st.warning(
+                "**These fields never passed through the Section 5.2 plausibility bounds.** "
+                + ", ".join(f"`{r.Field}` reaches {r.Max:,.0f} against a median of {r.Median:,.1f}"
+                            for r in bad.itertuples())
+                + ". Read their medians and quartiles; do not read their means or standard "
+                  "deviations. Any modelling use must extend the bounding first.",
+                icon="⚠️",
+            )
+
+        water = av[av["Field"].str.contains("ater")]
+        if len(water) and water["Present %"].max() > 25 > water["Present %"].min():
+            st.info(
+                f"**The water fields split.** `totalWaterUse` is present on "
+                f"{water['Present %'].max():.1f}% of filings while its components reach only "
+                f"{water[water['Present %'] < 25]['Present %'].max():.1f}%. The published data "
+                "supports aggregate water analysis but not the indoor/outdoor breakdown — a "
+                "property of the source, not a scoping decision.",
+                icon="💧",
+            )
+
+    if diag.get("pctdiff_n"):
+        same, n = diag["pctdiff_same"], diag["pctdiff_n"]
+        pct = same / n * 100
+        if pct > 99:
+            st.error(
+                f"**`pctDiffNationalSiteEui` and `pctDiffNationalSourceEui` are duplicates.** "
+                f"Identical on {same:,} of {n:,} rows ({pct:.2f}%); the {n - same} exceptions "
+                "differ by 0.10, which is rounding at the source. Site and source energy differ "
+                "by definition, so two identical columns indicate a publishing artefact. Using "
+                "both in a model double-counts one measurement.",
+                icon="🔁",
+            )
 
 # ----------------------------------------------------------------------------
 # Tab 3 — Descriptive Stats
@@ -928,9 +1112,127 @@ with tabs[4]:
     )
 
 # ----------------------------------------------------------------------------
-# Tab 6 — Responsible Entity (Section 6.7)
+# Tab 6 — Coverage Tier (Section 6.9)
 # ----------------------------------------------------------------------------
 with tabs[5]:
+    st.subheader("Coverage tier predicts filing, not compliance")
+    st.caption(
+        "`ladbsBuildingCategory` is the ordinance's own size and ownership segmentation. "
+        "Unlike propertyType, yearBuilt, grossFloorArea, occupancy and entityResponsible — "
+        "all missing on the structurally incomplete filings — it is populated on every "
+        "record. It is therefore the only structural field that can answer which buildings "
+        "file incompletely."
+    )
+
+    _bands = (dff.groupby("sizeBand")["isIncompleteFiling"].size()
+              .sort_values(ascending=False).index.tolist())
+    if len(_bands) < 2:
+        st.info(
+            f"Only one coverage tier in the current selection ({_bands[0] if _bands else 'none'}), "
+            "so there is no cross-tier comparison to make. Widen the filters.",
+            icon="ℹ️",
+        )
+    else:
+        _all = (dff.groupby("sizeBand")["isCompliant"].mean() * 100).reindex(_bands)
+        _cmp = (dff_complete.groupby("sizeBand")["isCompliant"].mean() * 100).reindex(_bands)
+        _inc = (dff.groupby("sizeBand")["isIncompleteFiling"].mean() * 100).reindex(_bands)
+        _sa, _sc = _all.max() - _all.min(), _cmp.max() - _cmp.min()
+
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Spread, all filings", f"{_sa:.1f} pts")
+        k2.metric("Spread, complete filings only", f"{_sc:.1f} pts")
+        k3.metric("Spread, incompleteness rate", f"{_inc.max() - _inc.min():.1f} pts")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            fig = go.Figure()
+            fig.add_bar(y=_bands, x=_all.values, orientation="h", name="All filings",
+                        marker_color=BLUE, text=_all.round(1), textposition="outside",
+                        cliponaxis=False)
+            fig.add_bar(y=_bands, x=_cmp.values, orientation="h",
+                        name="Complete filings only", marker_color="#90CAF9",
+                        text=_cmp.round(1), textposition="outside", cliponaxis=False)
+            fig.update_layout(height=430, barmode="group", xaxis_range=[0, 128],
+                              xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
+                              title="A. Compliance by coverage tier",
+                              legend={"orientation": "h", "y": -0.2})
+            st.plotly_chart(fig, width="stretch")
+        with c2:
+            fig = go.Figure(go.Bar(y=_bands, x=_inc.values, orientation="h",
+                                   marker_color=RED, text=_inc.round(1),
+                                   textposition="outside", cliponaxis=False))
+            fig.add_vline(x=dff["isIncompleteFiling"].mean() * 100, line_dash="dash",
+                          line_color=ORANGE,
+                          annotation_text=f"overall {dff['isIncompleteFiling'].mean()*100:.1f}%")
+            fig.update_layout(height=430, xaxis_range=[0, _inc.max() * 1.3],
+                              xaxis_title="% of filings structurally incomplete",
+                              yaxis={"autorange": "reversed"},
+                              title="B. Filing incompleteness by coverage tier")
+            st.plotly_chart(fig, width="stretch")
+
+        # The conclusion holds only if the spread genuinely collapses. State it either way.
+        if _sa > 0 and _sc < _sa / 2:
+            st.success(
+                f"Compliance varies {_sa:.1f} points across coverage tiers, but only {_sc:.1f} "
+                f"points among complete filings. **Coverage tier predicts whether a building "
+                f"completes a filing, not whether it complies once it has.** Panel B is the "
+                f"mechanism: incompleteness runs from {_inc.min():.1f}% for {_inc.idxmin()} to "
+                f"{_inc.max():.1f}% for {_inc.idxmax()}. Because incomplete filings are almost "
+                f"never compliant, that pattern surfaces in the headline rate as though it were "
+                f"a difference in performance.",
+                icon="🔍",
+            )
+        else:
+            st.info(
+                f"The compliance spread does not collapse once incomplete filings are excluded "
+                f"({_sa:.1f} to {_sc:.1f} points). Coverage tier is associated with compliance "
+                f"beyond its association with filing completeness, so the two panels are "
+                f"separate findings rather than one mechanism.",
+                icon="ℹ️",
+            )
+
+        st.divider()
+        st.subheader("Incompleteness by tier and program year")
+        st.caption(
+            "Tiers moving together in one year points to a programme-wide change; one tier "
+            "moving alone points to that tier's own phase-in date. Read alongside the "
+            "Compliance Trend tab, where the 2019 break is documented as a deadline suspension."
+        )
+        _piv = (dff.pivot_table(index="programYear", columns="sizeBand",
+                                values="isIncompleteFiling", aggfunc="mean") * 100).round(1)
+        if len(_piv) >= 2 and _piv.shape[1] >= 2:
+            fig = go.Figure()
+            for band in _piv.columns:
+                fig.add_trace(go.Scatter(x=_piv.index, y=_piv[band], mode="lines+markers",
+                                         name=band))
+            fig.update_layout(height=420, xaxis_title="Program Year",
+                              yaxis_title="% structurally incomplete",
+                              legend={"orientation": "h", "y": -0.25})
+            st.plotly_chart(fig, width="stretch")
+
+            _yoy = _piv.diff()
+            _rose = (_yoy > 0).sum(axis=1)
+            _broad = _rose[_rose == _rose.max()]
+            if _rose.max() == _piv.shape[1]:
+                st.caption(
+                    f"All {_piv.shape[1]} tiers rose together in "
+                    f"{', '.join(str(y) for y in _broad.index)}. Breadth alone does not identify "
+                    "one year — compare magnitude and evenness before reading any single year as "
+                    "a programme-wide event."
+                )
+        st.dataframe(_piv, width="stretch")
+
+        st.info(
+            "`isCityOwned` and `sizeBand` are derived from this field and are available on "
+            "incomplete filings, which makes them the only structural features usable across "
+            "all filings rather than the complete subset alone.",
+            icon="🧩",
+        )
+
+# ----------------------------------------------------------------------------
+# Tab 7 — Responsible Entity (Section 6.7)
+# ----------------------------------------------------------------------------
+with tabs[6]:
     st.subheader("Who files matters more than what is filed")
     st.caption(
         "`entityResponsible` records the organisation that submitted the benchmark report. "
@@ -1075,10 +1377,96 @@ with tabs[5]:
                 st.dataframe(_ops.head(8).rename(
                     columns={"mean": "compliance %", "count": "filings"}), width="stretch")
 
+        st.divider()
+        st.subheader("Is the agent effect an outsourcing effect?")
+        st.caption(
+            "`entityResponsible` mixes three kinds of filer: compliance vendors filing for many "
+            "owners, property managers filing for buildings they operate, and owners filing for "
+            "themselves. If compliance tracked that split, filer type would be the better "
+            "feature — three levels instead of thousands, and it generalises to unseen agents."
+        )
+        VENDOR_KEYS = ["ENERGY", "EFFICIENCY", "CONSERVICE", "REALPAGE", "YARDI", "WEGOWISE",
+                       "CODEGREEN", "CARLETON", "UTILITY MANAGEMENT", "CONSULTING",
+                       "BENCHMARK", "VERT", "SERVIDYNE", "UL VERIFICATION"]
+        MANAGER_KEYS = ["MANAGEMENT", "RESIDENTIAL SERVICES", "COMMUNITIES", "PROPERTIES",
+                        "REAL ESTATE", "APARTMENTS", "CBRE", "MOSS &", "BERGLAS"]
+        OWNER_SET = {"PUBLIC STORAGE", "EXTRA SPACE STORAGE", "STORAGE ETC", "PRICE SELF STORAGE",
+                     "EZ STORAGE RELATED COMPANIES", "PROLOGIS", "REXFORD INDUSTRIAL",
+                     "EQUITY RESIDENTIAL", "KAISER FOUNDATION HOSPITALS",
+                     "LOS ANGELES WORLD AIRPORTS", "LOS ANGELES DEPARTMENT OF WATER AND POWER",
+                     "CITY OF LOS ANGELES, RECREATION AND PARKS", "LOS ANGELES PUBLIC LIBRARY",
+                     "UNIVERSITY OF SOUTHERN CALIFORNIA", "PARAMOUNT STUDIOS", "KROGER",
+                     "FRED LEEDS PROPERTIES, INC", "ECE_COLA_GSD"}
+
+        def _kind(name):
+            u = str(name).upper()
+            if name in OWNER_SET:
+                return "OWNER"
+            if any(k in u for k in VENDOR_KEYS):
+                return "VENDOR"
+            if any(k in u for k in MANAGER_KEYS):
+                return "MANAGER"
+            return "UNCLASSIFIED"
+
+        _typed = _big.copy()
+        _typed["type"] = [_kind(a) for a in _typed.index]
+        _known = _typed[_typed["type"] != "UNCLASSIFIED"]
+        _movers = list(_broke["Agent"]) if "_broke" in dir() and len(_broke) else []
+
+        if _known["type"].nunique() < 2:
+            st.info("Too few classified agents in the current selection to compare filer types.",
+                    icon="ℹ️")
+        else:
+            def _by_type(exclude=()):
+                rows = []
+                for t, grp in _known.groupby("type"):
+                    ags = [a for a in grp.index if a not in exclude]
+                    if not ags:
+                        continue
+                    f = dff_complete[dff_complete["entityResponsible"].isin(ags)]
+                    rows.append({"Filer type": t, "Agents": len(ags), "Filings": len(f),
+                                 "Compliance %": round(f["isCompliant"].mean() * 100, 1)})
+                return pd.DataFrame(rows).sort_values("Compliance %")
+
+            _t1, _t2 = _by_type(), _by_type(exclude=_movers)
+            c1, c2 = st.columns(2)
+            c1.markdown("**All classified agents**")
+            c1.dataframe(_t1, width="stretch", hide_index=True)
+            c2.markdown(f"**Excluding the {len(_movers)} regime-changing agent(s)**"
+                        if _movers else "**No regime-changing agents to exclude**")
+            c2.dataframe(_t2, width="stretch", hide_index=True)
+
+            if len(_t2) >= 2:
+                _sp1 = _t1["Compliance %"].max() - _t1["Compliance %"].min()
+                _sp2 = _t2["Compliance %"].max() - _t2["Compliance %"].min()
+                if _sp2 < 5:
+                    st.warning(
+                        f"**The outsourcing hypothesis does not hold.** The gap across filer "
+                        f"types falls from {_sp1:.1f} to {_sp2:.1f} points once the "
+                        f"regime-changing agents are removed, so the apparent effect is those "
+                        f"specific firms rather than a general property of who files. Filer type "
+                        f"is not a viable low-cardinality substitute: a model must carry agent "
+                        f"identity itself, with high-volume agents retained and the rest bucketed.",
+                        icon="⚠️",
+                    )
+                else:
+                    st.success(
+                        f"The filer-type gap survives removal of the regime-changing agents "
+                        f"({_sp1:.1f} to {_sp2:.1f} points), so it is not driven by those firms "
+                        f"alone. Filer type is worth testing as a low-cardinality feature "
+                        f"alongside agent identity.",
+                        icon="✅",
+                    )
+            _unc = _typed[_typed["type"] == "UNCLASSIFIED"]
+            if len(_unc):
+                st.caption(f"{len(_unc)} agent(s) unclassified by the keyword rules. Because they "
+                           "sit at high compliance, classifying them would narrow the gap further "
+                           "rather than widen it.")
+
 # ----------------------------------------------------------------------------
-# Tab 7 — Correlations (Figure 6 + Section 6.6)
+# Tab 8 — Correlations (Figure 6 + Section 6.6)
 # ----------------------------------------------------------------------------
-with tabs[6]:
+with tabs[7]:
     st.subheader("Figure 6 — Correlation heatmap")
     corr_cols = CORR_COLS + ["isCompliant"]
     corr = dff[corr_cols].corr().round(2)
@@ -1148,6 +1536,6 @@ with tabs[6]:
 
 st.divider()
 st.caption(
-    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v5.ipynb "
-    "(Sections 3–7) · data: Los Angeles Open Data Portal, LADBS (public domain)"
+    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v21.ipynb "
+    "(Sections 3–9) · data: Los Angeles Open Data Portal, LADBS (public domain)"
 )
