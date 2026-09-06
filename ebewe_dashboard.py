@@ -46,27 +46,49 @@ st.set_page_config(
 # and red/green would also import a moral reading ("green = good") into a chart
 # where the honest finding is that compliance measures filing completeness rather
 # than performance.
-INK = "#12161A"        # text, axes, reference lines
-SLATE = "#5C6771"      # secondary text; the default for any non-focal series
-PAPER = "#FAFAF8"      # page ground
-CIVIC = "#1F5C87"      # the measured quantity; COMPLIED
-OCHRE = "#B85C1E"      # the contrasting state: NOT COMPLIED, incomplete, below threshold
-VERDIGRIS = "#2F6F4F"  # one job only: a check that passed
-RULE = "#E3E5E2"       # hairlines, borders, dividers
-GRID = "#E8EAE6"       # chart gridlines — lighter than RULE so data sits in front
+# The tokens come in two sets. An earlier version hardcoded the light one, which
+# forced a pale background and dark text no matter what theme was selected — so
+# choosing Dark produced Streamlit's dark chrome with this stylesheet's light
+# ground underneath it, and the sidebar went unreadable. The theme is read from
+# Streamlit and the matching set is used.
+#
+# Only the neutrals flip. CIVIC and OCHRE keep their meaning in both themes and are
+# lightened on dark so they hold contrast against a dark ground rather than sinking
+# into it. Both remain distinguishable under deuteranopia and protanopia, which
+# red/green is not — and red/green would import a moral reading ("green = good")
+# into charts whose honest finding is that compliance measures filing completeness
+# rather than performance.
+try:
+    _THEME = st.context.theme.type or "light"
+except Exception:          # older Streamlit, or no theme information available
+    _THEME = "light"
+IS_DARK = _THEME == "dark"
 
-# Ordered hues for charts that genuinely need more than two categories (the
-# per-tier series). Sequential in lightness so the series stay separable in
-# greyscale and in print.
-TIER_SEQUENCE = ["#12314A", "#1F5C87", "#4A8DB8", "#8FB4CC", "#C2D4E0"]
+if IS_DARK:
+    INK = "#E8EAED"        # text, axes, reference lines
+    SLATE = "#9AA4AE"      # secondary text; the default for any non-focal series
+    CIVIC = "#5B9BD1"      # the measured quantity; COMPLIED
+    OCHRE = "#E08A4B"      # the contrasting state: NOT COMPLIED, incomplete, below threshold
+    TIER_SEQUENCE = ["#C2D4E0", "#8FB4CC", "#5B9BD1", "#3A7BA8", "#245C82"]
+else:
+    INK = "#12161A"
+    SLATE = "#5C6771"
+    CIVIC = "#1F5C87"
+    OCHRE = "#B85C1E"
+    # Ordered hues for charts that genuinely need more than two categories (the
+    # per-tier series). Sequential in lightness so the series stay separable in
+    # greyscale and in print.
+    TIER_SEQUENCE = ["#12314A", "#1F5C87", "#4A8DB8", "#8FB4CC", "#C2D4E0"]
 
-# Retained names so existing call sites keep working; each now points at the
-# token whose meaning it was actually carrying.
+# Call-site aliases. BLUE and RED are kept because they read naturally at the point of
+# use ("red if below the line"); each resolves to the token whose meaning it carries.
+# GREEN is gone: it was pointing at VERDIGRIS, declared for "a check that passed", while
+# actually colouring a postal-code chart, a median-EUI chart and a trend series — the
+# same one-hue-many-meanings problem this palette exists to prevent. ORANGE is gone too;
+# it resolved to INK, so nothing orange was ever drawn and the name misled every reader.
 BLUE = CIVIC
-DARK_BLUE = "#12314A"
 RED = OCHRE
-GREEN = VERDIGRIS
-ORANGE = INK           # was the reference-line colour; a threshold is not an alarm
+DARK_BLUE = TIER_SEQUENCE[0]   # one lightness step down, for a second related series
 
 # ----------------------------------------------------------------------------
 # Typography and page styling
@@ -80,58 +102,93 @@ ORANGE = INK           # was the reference-line colour; a threshold is not an al
 # analysis depends on: `propertyType` is a column in the file, "property type" is
 # the concept. Losing it would flatten a difference the prose relies on.
 st.markdown(
-    # The :root block is interpolated from the tokens above so the palette has a
-    # single source of truth. Defining it twice is how a stylesheet drifts away
-    # from the charts it is supposed to match.
-    f"""
-    <style>:root {{
-      --ink: {INK}; --slate: {SLATE}; --paper: {PAPER};
-      --civic: {CIVIC}; --ochre: {OCHRE}; --rule: {RULE};
-    }}</style>
-    """
     """
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
     <style>
-      html, body, [class*="st-"], .stMarkdown, .stDataFrame {
+      /* NOTE: no blank lines in this stylesheet. Streamlit renders this through a
+         markdown parser first, and a blank line followed by indented text is markdown's
+         code-block syntax — it closes the <style> element and prints the remaining CSS
+         onto the page as body text. Keep every rule on a contiguous run of lines. */
+      /* This sheet sets no background and no text colour. That is deliberate. An earlier
+         version pinned both to a light palette, so choosing Dark gave Streamlit's dark
+         chrome over a forced light ground and an unreadable sidebar. Branching in Python
+         on st.context.theme does not fix it either: Streamlit documents that value as
+         possibly incorrect at the moment the user changes theme, and a Python branch only
+         takes effect on the next rerun.
+         Inheriting instead means the browser repaints the moment the toggle is used, with
+         no rerun and nothing to keep in sync. Every surface below is derived from the
+         inherited text colour with color-mix, so it tracks whichever theme is active. */
+      html, body, .stApp, .stMarkdown, .stCaption, .stDataFrame,
+      [data-testid="stMetricValue"], [data-testid="stMetricLabel"],
+      .stTabs [data-baseweb="tab"], [data-testid="stWidgetLabel"] {
         font-family: "IBM Plex Sans", system-ui, sans-serif;
-        color: var(--ink);
       }
-      .stApp { background: var(--paper); }
+      /* Icons keep their own font whatever else is set. Restored explicitly so a future
+         change to the rule above cannot silently break them again. */
+      [data-testid="stIconMaterial"], .material-icons, .material-icons-outlined,
+      [class*="material-symbols"], [class*="material-icons"], span[data-testid*="Icon"] {
+        font-family: "Material Symbols Rounded", "Material Symbols Outlined",
+                     "Material Icons" !important;
+      }
       h1, h2, h3, h4 {
         font-family: "Source Serif 4", Georgia, serif;
-        font-weight: 600; color: var(--ink); letter-spacing: -0.01em;
+        font-weight: 600; letter-spacing: -0.01em;
       }
       h1 { font-size: 2.1rem; line-height: 1.15; }
       h2 { font-size: 1.45rem; margin-top: 0.4rem; }
       h3 { font-size: 1.15rem; }
-      /* Prose stays under ~80 characters; long callout lines are the hardest
-         thing to read in the whole app. */
-      .stMarkdown p, .stAlert p { max-width: 74ch; line-height: 1.55; }
+      /* Measure by role, not one rule for everything. Narrative prose keeps a reading
+         measure; captions sit under the thing they describe and take its width; callouts
+         run wider than prose but not edge to edge. */
+      .stMarkdown p { max-width: 74ch; line-height: 1.55; }
+      .stAlert p { max-width: 104ch; line-height: 1.5; }
+      [data-testid="stCaptionContainer"] p,
+      [data-testid="stCaptionContainer"] { max-width: none; line-height: 1.5; }
+      [data-testid="stCaptionContainer"] { opacity: 0.72; font-size: 0.86rem; }
       code, .stMarkdown code {
         font-family: "IBM Plex Mono", monospace; font-size: 0.86em;
-        background: #EFF1EE; color: var(--ink);
+        background: color-mix(in srgb, currentColor 8%, transparent);
         padding: 0.08em 0.32em; border-radius: 2px;
       }
-      /* Metric values are the one place numbers should dominate, so they get
-         tabular figures and room to breathe. */
-      [data-testid="stMetricValue"] {
-        font-family: "IBM Plex Sans", sans-serif; font-weight: 600;
-        font-variant-numeric: tabular-nums; color: var(--ink);
-      }
-      [data-testid="stMetricLabel"] { color: var(--slate); font-size: 0.82rem; }
-      /* Callouts read as margin notes rather than product notifications: a rule
-         on the leading edge, no fill, no shadow. */
+      [data-testid="stMetricValue"] { font-weight: 600; font-variant-numeric: tabular-nums; }
+      [data-testid="stMetricLabel"] { opacity: 0.72; font-size: 0.82rem; }
+      /* Callouts read as margin notes rather than product notifications: a rule on the
+         leading edge, no fill, no shadow. The rule is mixed from the inherited text
+         colour so it stays visible on either ground. */
       .stAlert {
         background: transparent !important; border: 0 !important;
-        border-left: 2px solid var(--rule) !important; border-radius: 0 !important;
-        padding-left: 0.9rem !important; box-shadow: none !important;
+        border-left: 2px solid color-mix(in srgb, currentColor 22%, transparent) !important;
+        border-radius: 0 !important; padding-left: 0.9rem !important;
+        box-shadow: none !important;
       }
-      hr { border-color: var(--rule); }
-      [data-testid="stSidebar"] { background: #F2F3F0; border-right: 1px solid var(--rule); }
+      hr { border-color: color-mix(in srgb, currentColor 15%, transparent); }
+      [data-testid="stSidebar"] {
+        border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+      }
       .stTabs [data-baseweb="tab"] { font-size: 0.94rem; }
-    </style>
+      /* Print. These pages get exported to PDF as the submitted artefact, so print is a
+         real output rather than an afterthought. Side-by-side columns kept their screen
+         widths on paper, which cut the Overview donut off at the page edge; stacking them
+         lets every section print the way the single-column tabs already did. Blocks were
+         also free to split across a page boundary, which dropped the "Values that cannot
+         be company names" table on top of the heading beneath it. */
+      @media print {
+        [data-testid="stHorizontalBlock"] { display: block !important; }
+        [data-testid="stColumn"] {
+          width: 100% !important; flex: none !important;
+          min-width: 100% !important; margin-bottom: 1rem;
+        }
+        [data-testid="stPlotlyChart"], .stPlotlyChart, .js-plotly-plot,
+        [data-testid="stDataFrame"], .stAlert, [data-testid="stMetric"] {
+          break-inside: avoid; page-break-inside: avoid;
+        }
+        h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+        .stMarkdown p, .stAlert p { max-width: none; }
+        [data-testid="stSidebar"] { break-before: page; }
+      }
+      </style>
     """,
     unsafe_allow_html=True,
 )
@@ -139,14 +196,23 @@ st.markdown(
 # Chart defaults, so every figure inherits the same face and axis weight rather
 # than each one re-specifying it.
 PLOT_FONT = {"family": "IBM Plex Sans, system-ui, sans-serif", "size": 12, "color": INK}
+# Gridlines and axis rules are semi-transparent mid-greys rather than fixed hexes, so
+# they read against either ground without depending on the theme value being current.
+# Plotly cannot inherit CSS, so figures are the one place the theme has to be resolved
+# in Python — and st.context.theme is documented as possibly stale at the moment of a
+# toggle. Keeping the structural furniture theme-agnostic means a stale value can at
+# worst tint the text, never leave a chart with invisible axes.
+GRID_RGBA = "rgba(128,134,142,0.22)"
+AXIS_RGBA = "rgba(128,134,142,0.45)"
+
 PLOT_LAYOUT = {
     "font": PLOT_FONT,
     "paper_bgcolor": "rgba(0,0,0,0)",
     "plot_bgcolor": "rgba(0,0,0,0)",
-    "xaxis": {"gridcolor": GRID, "zerolinecolor": GRID,
-              "linecolor": "#C9CEC7", "title": {"font": {"size": 12, "color": SLATE}}},
-    "yaxis": {"gridcolor": GRID, "zerolinecolor": GRID,
-              "linecolor": "#C9CEC7", "title": {"font": {"size": 12, "color": SLATE}}},
+    "xaxis": {"gridcolor": GRID_RGBA, "zerolinecolor": GRID_RGBA,
+              "linecolor": AXIS_RGBA, "title": {"font": {"size": 12, "color": SLATE}}},
+    "yaxis": {"gridcolor": GRID_RGBA, "zerolinecolor": GRID_RGBA,
+              "linecolor": AXIS_RGBA, "title": {"font": {"size": 12, "color": SLATE}}},
     # title_font only — setting a title dict without "text" makes Plotly render the
     # string "undefined" on every figure that never had a title of its own.
     "title_font": {"family": "Source Serif 4, Georgia, serif", "size": 15, "color": INK},
@@ -159,8 +225,19 @@ def chart(fig, **kwargs):
     Every figure goes through here so the type face, grid weight and axis colour
     are set in one place. update_layout merges rather than replaces, so a
     figure's own range, tickangle or reversed axis survives this call.
+
+    The title font is applied only when the figure actually has a title. Setting
+    it unconditionally materialises a title object with no text, which Plotly
+    renders as the literal word "undefined" above every untitled chart — the
+    frequency chart, the missingness bars, Figures 3 to 5 and several others.
+    An earlier fix moved from a title dict to title_font and did not help,
+    because the cause is the empty title object rather than how it is spelled.
     """
-    fig.update_layout(**PLOT_LAYOUT)
+    layout = dict(PLOT_LAYOUT)
+    title_font = layout.pop("title_font", None)
+    if title_font and getattr(fig.layout.title, "text", None):
+        layout["title_font"] = title_font
+    fig.update_layout(**layout)
     kwargs.setdefault("width", "stretch")
     return st.plotly_chart(fig, **kwargs)
 
@@ -811,7 +888,26 @@ def render_future_phase(which):
 
 
 # ----------------------------------------------------------------------------
-# Header
+# Phase routing
+# ----------------------------------------------------------------------------
+# The course runs Preliminary -> Midterm -> Final. Only the Preliminary is done, and
+# the two later phases are shown rather than hidden so a reader can see the whole
+# arc and what each stage is constrained by.
+#
+# Everything in those two sections is either a figure already computed elsewhere in
+# this app, or an explicit statement that something has not been established. No
+# chart is mocked up and no number is invented: a placeholder that looks like a
+# result is a claim, and this project has not earned those claims yet.
+#
+# This gate sits above the header because each phase writes its own title. With the
+# header first, the Midterm and Final pages carried the Preliminary's title above
+# their own — two titles, the wrong one on top.
+if phase != PHASE_PRELIM:
+    render_future_phase(phase)
+    st.stop()
+
+# ----------------------------------------------------------------------------
+# Header — Preliminary only
 # ----------------------------------------------------------------------------
 st.title("EBEWE Program — Descriptive & Diagnostic Dashboard")
 st.caption(
@@ -823,21 +919,6 @@ if filtered:
         f"Filtered to program years {year_range[0]}–{year_range[1]}. Figures reflect the "
         "filtered subset, not the full dataset.",
     )
-
-# ----------------------------------------------------------------------------
-# Phase routing
-# ----------------------------------------------------------------------------
-# The course runs Preliminary -> Midterm -> Final. Only the Preliminary is done, and
-# the two later phases are shown rather than hidden so a reader can see the whole
-# arc and what each stage is constrained by.
-#
-# Everything in those two sections is either a figure already computed elsewhere in
-# this app, or an explicit statement that something has not been established. No
-# chart is mocked up and no number is invented: a placeholder that looks like a
-# result is a claim, and this project has not earned those claims yet.
-if phase != PHASE_PRELIM:
-    render_future_phase(phase)
-    st.stop()
 
 # The compliance series is computed here rather than inside the Compliance Trend tab
 # because the Overview spine states the same figures. Computing it twice is how a summary
@@ -1267,7 +1348,10 @@ with tabs[2]:
         fig = px.bar(x=med.values, y=med.index, orientation="h",
                      labels={"x": "Median Site EUI (kBtu/ft²)", "y": ""},
                      text=med.round(1))
-        fig.update_traces(marker_color=GREEN, textposition="outside", cliponaxis=False)
+        # One series, so the hue encodes nothing — the bar length already carries the
+        # value. GREEN previously coloured this chart, which gave that token a second
+        # meaning on top of the one it was declared for.
+        fig.update_traces(marker_color=CIVIC, textposition="outside", cliponaxis=False)
         fig.update_layout(height=max(380, 30 * len(med)), yaxis={"autorange": "reversed"})
         _pad_axis(fig, med.values)
         chart(fig)
@@ -1334,12 +1418,12 @@ with tabs[3]:
                           name="Flagged outlier (not removed)", marker_color=RED)
         # Median and mean sit ~11 units apart on a 2,000-unit axis, so their labels
         # overlap into illegible text if both are placed at the default position.
-        fig.add_vline(x=eui["siteEui"].median(), line_dash="dash", line_color=ORANGE)
-        fig.add_vline(x=eui["siteEui"].mean(), line_dash="dot", line_color="black")
+        fig.add_vline(x=eui["siteEui"].median(), line_dash="dash", line_color=INK)
+        fig.add_vline(x=eui["siteEui"].mean(), line_dash="dot", line_color=INK)
         fig.add_annotation(x=0.98, y=0.98, xref="paper", yref="paper",
                            xanchor="right", showarrow=False, align="right",
                            text=(f"<b>Median</b> {eui['siteEui'].median():,.1f}"
-                                 f" &nbsp;<span style='color:{ORANGE}'>— —</span><br>"
+                                 f" &nbsp;<span style='color:{INK}'>— —</span><br>"
                                  f"<b>Mean</b> {eui['siteEui'].mean():,.1f}"
                                  f" &nbsp;<span style='color:black'>· · ·</span>"),
                            bgcolor="rgba(255,255,255,0.85)", bordercolor="#CCCCCC",
@@ -1373,7 +1457,7 @@ with tabs[3]:
                                marker_color=colors, text=comp_rate.round(1),
                                texttemplate="%{text}%", textposition="outside",
                                cliponaxis=False))
-        fig.add_vline(x=comp_rate.mean(), line_dash="dash", line_color=ORANGE,
+        fig.add_vline(x=comp_rate.mean(), line_dash="dash", line_color=INK,
                       annotation_text=f"Avg {comp_rate.mean():.1f}%",
                       annotation_position="bottom left")
         fig.add_vline(x=80, line_dash="dot", line_color=INK,
@@ -1429,7 +1513,8 @@ with tabs[3]:
         fig = px.bar(x=zips.values, y=zips.index, orientation="h",
                      labels={"x": f"Total CO2e, {_yr_lo}\u2013{_yr_hi} (Metric Tons)",
                              "y": "Postal Code"})
-        fig.update_traces(marker_color=GREEN)
+        # Single series again; no encoding, so no second hue.
+        fig.update_traces(marker_color=CIVIC)
         fig.update_layout(height=560, yaxis={"autorange": "reversed", "type": "category"})
         chart(fig)
         st.caption(f"Total, not average — this view is about where retrofit and enforcement "
@@ -1452,7 +1537,7 @@ with tabs[4]:
                              line={"color": BLUE, "width": 3}), secondary_y=False)
     fig.add_trace(go.Scatter(x=yearly_complete.index, y=yearly_complete.values,
                              mode="lines+markers", name="% Compliant (complete filings only)",
-                             line={"color": GREEN, "width": 3},
+                             line={"color": DARK_BLUE, "width": 3},
                              marker_symbol="triangle-up"), secondary_y=False)
     fig.add_trace(go.Scatter(x=yearly_incomplete.index, y=yearly_incomplete.values,
                              mode="lines+markers", name="% Incomplete Filing",
@@ -1525,7 +1610,8 @@ with tabs[4]:
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=_bal.index, y=_bal["Complete %"], mode="lines+markers",
-                                 name="Complete filings only", line={"color": GREEN, "width": 3}))
+                                 name="Complete filings only",
+                                 line={"color": DARK_BLUE, "width": 3}))
         fig.add_trace(go.Scatter(x=_bal.index, y=_bal["Overall %"], mode="lines+markers",
                                  name="Overall", line={"color": BLUE, "width": 2, "dash": "dot"}))
         fig.update_layout(height=420, xaxis_title="Program Year", yaxis_title="% Compliant",
@@ -1647,7 +1733,7 @@ with tabs[5]:
                                    marker_color=RED, text=_inc.round(1),
                                    textposition="outside", cliponaxis=False))
             fig.add_vline(x=dff["isIncompleteFiling"].mean() * 100, line_dash="dash",
-                          line_color=ORANGE,
+                          line_color=INK,
                           annotation_text=f"overall {dff['isIncompleteFiling'].mean()*100:.1f}%")
             fig.update_layout(height=430, xaxis_range=[0, _inc.max() * 1.3],
                               xaxis_title="% of filings structurally incomplete",
@@ -1765,19 +1851,33 @@ with tabs[6]:
         # that outlier is itself an operator effect.
         if len(_types) > 2:
             _wo = _types.drop(_types.idxmin())
+            # The bases were previously described in a 106-word paragraph. They are two
+            # measurements with different denominators, which is a comparison — so it is
+            # shown as one, with the warning about comparability kept as the lead.
             st.caption(
-                f"The two figures use different denominators and are not directly comparable "
-                f"as ratios: the agent spread covers every agent with {MIN_FILINGS}+ complete "
-                f"filings across all {len(dff_complete):,} of them, while the property-type "
-                f"spread covers the {len(_types)} types in the current selection with "
-                f"{MIN_TYPE_FILINGS}+ filings. On that selection the type spread is "
-                f"{_types.max() - _types.min():.1f} points, and the lowest "
-                f"({_types.idxmin().title()}, {_types.min():.1f}%) accounts for much of it — "
-                f"drop it and the remaining {len(_wo)} span {_wo.max() - _wo.min():.1f} "
-                f"points. Across all {len(_tall)} qualifying types it is "
-                f"{_tall.max() - _tall.min():.1f} points. On either basis the responsible "
-                f"entity discriminates more sharply than building function does, and the "
-                f"category that looks like an exception is decomposed below."
+                "These two spreads use different denominators and are not comparable as "
+                "ratios. Both bases are stated so the comparison can be read for what it is."
+            )
+            st.dataframe(pd.DataFrame([
+                {"Spread": "Across responsible agents",
+                 "Basis": f"agents with {MIN_FILINGS}+ complete filings",
+                 "Population": f"all {len(dff_complete):,} complete filings",
+                 "Range": f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts"},
+                {"Spread": "Across property types (current selection)",
+                 "Basis": f"types with {MIN_TYPE_FILINGS}+ filings",
+                 "Population": f"{len(_types)} types in the selection",
+                 "Range": f"{_types.max() - _types.min():.1f} pts"},
+                {"Spread": "Across property types (all qualifying)",
+                 "Basis": f"types with {MIN_TYPE_FILINGS}+ filings",
+                 "Population": f"{len(_tall)} types",
+                 "Range": f"{_tall.max() - _tall.min():.1f} pts"},
+            ]), width="stretch", hide_index=True)
+            st.caption(
+                f"The lowest type ({_types.idxmin().title()}, {_types.min():.1f}%) accounts "
+                f"for much of the type spread — drop it and the remaining {len(_wo)} span "
+                f"{_wo.max() - _wo.min():.1f} points. On either basis the responsible entity "
+                f"discriminates more sharply than building function does, and the category "
+                f"that looks like an exception is decomposed below."
             )
         else:
             st.caption(f"Too few property types in the current selection to report a spread. "
@@ -1888,19 +1988,28 @@ with tabs[6]:
                     f"effect "
                     f"presenting as a building-function effect.",
                 )
-                _rows = [f"{sh:.0%} ({_base - sh*_deficit:.1f}%): {len(a)} operator(s)"
-                         f" — {', '.join(a) if a else 'none'}"
-                         for sh, a in _sens.items()]
+                # This was a paragraph. It is tabular data — four thresholds, the rate
+                # each implies, and the set each selects — and serialising it into prose
+                # buried the only thing that matters: the set does not change. As a table
+                # the constancy is visible in one pass down the last column.
                 st.caption(
                     f"Driver rule: {MIN_OPERATOR_FILINGS}+ filings in the category and at "
                     f"least {_margin:.1f} points below the {_base:.1f}% baseline "
                     f"({DEFICIT_SHARE:.0%} of the category's own {_deficit:.1f}-point "
-                    f"deficit). The margin is a judgement, so its effect is shown: "
-                    + " · ".join(_rows)
-                    + f" · unguarded rule (0%): {len(_unguarded)} operator(s). If the "
-                    f"selected set moves across that range the decomposition is fragile "
-                    f"and should not be read as a finding."
+                    f"deficit). The margin is a judgement, so its effect is shown in full — "
+                    f"if the selected set moved across this range the decomposition would be "
+                    f"fragile and should not be read as a finding."
                 )
+                _sens_rows = [
+                    {"Margin": f"{sh:.0%} of deficit", "Threshold": f"{_base - sh*_deficit:.1f}%",
+                     "Operators": len(a), "Selected": ", ".join(a) if a else "none"}
+                    for sh, a in _sens.items()
+                ]
+                _sens_rows.append({
+                    "Margin": "0% (unguarded)", "Threshold": f"{_base:.1f}%",
+                    "Operators": len(_unguarded),
+                    "Selected": ", ".join(_unguarded) if _unguarded else "none"})
+                st.dataframe(pd.DataFrame(_sens_rows), width="stretch", hide_index=True)
                 st.dataframe(_ops.head(8).rename(
                     columns={"mean": "compliance %", "count": "filings"}), width="stretch")
 
@@ -1986,30 +2095,47 @@ with tabs[6]:
                     _ov = abs(_d["OWNER"] - _out_r)
                     _mgr = _d.get("MANAGER")
                     _mgr_n = int(_n.get("MANAGER", 0))
+                    # One paragraph previously carried the finding, the numbers behind it,
+                    # a robustness check and the Midterm consequence. They are four
+                    # different kinds of statement and a reader has to separate them
+                    # anyway; doing it here means the finding is legible at a glance and
+                    # the support is available rather than in the way.
                     st.warning(
-                        f"**Outsourcing does not explain the agent effect.** With the two "
-                        f"regime-changing agents removed, self-filed buildings (OWNER, "
-                        f"{int(_n['OWNER']):,} filings) comply at {_d['OWNER']:.1f}% and "
-                        f"outsourced ones ({' + '.join(_out_types)}, {len(_out_f):,} filings) "
-                        f"at {_out_r:.1f}% — a gap of {_ov:.1f} points"
-                        + (f", both within a point of the {_base:.1f}% baseline"
+                        f"**Outsourcing does not explain the agent effect.** Self-filed "
+                        f"{_d['OWNER']:.1f}% against outsourced {_out_r:.1f}% — a gap of "
+                        f"{_ov:.1f} points"
+                        + (f", both within a point of the {_base:.1f}% baseline."
                            if max(abs(_d["OWNER"] - _base), abs(_out_r - _base)) < 1
-                           else f", against a {_base:.1f}% baseline")
-                        + (". Paying someone else to file is not associated with a better "
-                           "outcome here." if _out_r <= _d["OWNER"] + 1 else
-                           ". The two sit close enough that filer type does not separate them "
-                           "usefully.")
-                        + (f" Vendors alone sit at {_d['VENDOR']:.1f}%, "
-                           + ("at or below baseline, " if _d["VENDOR"] <= _base else "above baseline, ")
-                           + "so this is not an artefact of pooling them with managers."
-                           if "VENDOR" in _d else "")
-                        + (f" Manager-filed buildings do sit higher ({_mgr:.1f}% on "
-                           f"{_mgr_n:,} filings), but on a small base with most of that group "
-                           f"near 100% — suggestive, not a finding." if _mgr is not None else "")
-                        + f" Filer type is not a viable low-cardinality substitute: a model "
-                          f"must carry agent identity, with high-volume agents retained and "
-                          f"the rest bucketed.",
+                           else f", against a {_base:.1f}% baseline."),
                     )
+                    _fc1, _fc2 = st.columns(2)
+                    _fc1.markdown(
+                        f"Self-filed — OWNER  \n**{int(_n['OWNER']):,}** filings")
+                    _fc2.markdown(
+                        f"Outsourced — {' + '.join(_out_types)}  \n"
+                        f"**{len(_out_f):,}** filings")
+                    _notes = []
+                    if _out_r <= _d["OWNER"] + 1:
+                        _notes.append("Paying someone else to file is not associated with a "
+                                      "better outcome here.")
+                    else:
+                        _notes.append("The two sit close enough that filer type does not "
+                                      "separate them usefully.")
+                    if "VENDOR" in _d:
+                        _notes.append(
+                            f"Vendors alone sit at {_d['VENDOR']:.1f}%, "
+                            + ("at or below baseline" if _d["VENDOR"] <= _base else "above baseline")
+                            + ", so this is not an artefact of pooling them with managers.")
+                    if _mgr is not None:
+                        _notes.append(
+                            f"Manager-filed buildings do sit higher ({_mgr:.1f}% on "
+                            f"{_mgr_n:,} filings), but on a small base with most of that group "
+                            f"near 100% — suggestive, not a finding.")
+                    _notes.append("**For the Midterm:** filer type is not a viable "
+                                  "low-cardinality substitute. A model must carry agent "
+                                  "identity, with high-volume agents retained and the rest "
+                                  "bucketed.")
+                    st.caption("  \n".join(_notes))
                     st.caption(
                         f"Reported for completeness: the widest gap between any two filer "
                         f"types is {_sp1:.1f} points across all classified agents and "
@@ -2100,9 +2226,3 @@ with tabs[7]:
         "responsible entity, filing completeness — rather than by energy performance itself. "
         "A Midterm model built only on continuous energy metrics is unlikely to perform well.",
     )
-
-st.divider()
-st.caption(
-    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v28.ipynb "
-    "(Sections 3–7) · data: Los Angeles Open Data Portal, LADBS (public domain)"
-)
