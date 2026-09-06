@@ -3,7 +3,7 @@ EBEWE Program — Descriptive & Diagnostic Dashboard
 City of Los Angeles, Department of Building and Safety
 
 Preliminary phase deliverable. Every statistic and figure here is computed live
-from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v26.ipynb
+from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v28.ipynb
 (Sections 3-5 cleaning, Section 6 descriptive stats, Section 7 figures).
 Nothing is hardcoded, so a future data refresh flows straight through.
 
@@ -238,6 +238,11 @@ AGE_ORDER = ["1930 or Earlier", "1931-1950", "1951-1970", "1971-1990", "1991-Pre
 MIN_PLAUSIBLE_AREA = 1000
 # A property-type rate computed on a handful of filings is noise, not a segment
 # finding. Types below this are charted but excluded from spread and flagging.
+PHASE_PRELIM = "Preliminary — complete"
+PHASE_MID = "Midterm — planned"
+PHASE_FINAL = "Final — scoped"
+PHASES = [PHASE_PRELIM, PHASE_MID, PHASE_FINAL]
+
 MIN_TYPE_FILINGS = 100
 # An operator counts as a driver of a category's deficit only if it is large enough to
 # move the category AND materially below baseline. "Materially" is a declared judgement,
@@ -585,6 +590,14 @@ if raw_bytes is None:
 
 df, diag = load_and_clean(raw_bytes)
 
+phase = st.sidebar.radio(
+    "Project phase",
+    PHASES,
+    help="The Preliminary phase is complete. The later phases are shown so the scope of "
+         "the whole project is visible; neither contains results yet.",
+)
+st.sidebar.divider()
+
 years = sorted(df["programYear"].dropna().unique().astype(int))
 year_range = st.sidebar.select_slider(
     "Program year range",
@@ -638,6 +651,166 @@ if len(dff) == 0:
 filtered = (year_range[0], year_range[1]) != (years[0], years[-1])
 
 # ----------------------------------------------------------------------------
+# Forward-looking phases
+# ----------------------------------------------------------------------------
+def _phase_header(title, standing, blurb):
+    st.title(title)
+    st.caption(standing)
+    st.markdown(blurb)
+    st.divider()
+
+
+def _settled(rows):
+    """Facts this phase inherits. Every value is computed above, not restated by hand."""
+    st.markdown("**What the Preliminary phase already settles**")
+    for label, value, why in rows:
+        c1, c2 = st.columns([1, 3])
+        c1.metric(label, value)
+        c2.markdown(f"<div style='padding-top:0.9rem'>{why}</div>", unsafe_allow_html=True)
+
+
+def _open_questions(items):
+    st.markdown("**Not established — these are decisions, not results**")
+    for head, body in items:
+        st.markdown(f"- **{head}** {body}")
+
+
+def render_future_phase(which):
+    n_buildings = df["buildingId"].nunique()
+    per_building = len(df) / n_buildings if n_buildings else float("nan")
+    sep = diag["incomplete_crosstab_wide"].loc[True, "NOT COMPLIED"]
+
+    # Section 8 item 14. Three baselines, not one: which applies depends on the
+    # modelling-scope decision, and they differ by more than thirty points. Nothing
+    # here is fitted — this is arithmetic on the cleaned frame.
+    _y = df["isCompliant"]
+    _dc = df[~df["isIncompleteFiling"]]
+    majority = max(_y.mean(), 1 - _y.mean()) * 100
+    _maj_complete = max(_dc["isCompliant"].mean(), 1 - _dc["isCompliant"].mean()) * 100
+    _rule = (~df["isIncompleteFiling"]).astype(int)
+    _acc_rule = (_rule == _y).mean() * 100
+    _tp = int(((_rule == 1) & (_y == 1)).sum()); _fp = int(((_rule == 1) & (_y == 0)).sum())
+    _fn = int(((_rule == 0) & (_y == 1)).sum())
+    _prec = _tp / (_tp + _fp) * 100 if (_tp + _fp) else float("nan")
+    _rec = _tp / (_tp + _fn) * 100 if (_tp + _fn) else float("nan")
+    _f1 = 2 * _prec * _rec / (_prec + _rec) if (_prec + _rec) else float("nan")
+
+    if which == PHASE_MID:
+        _phase_header(
+            "Midterm — predictive modelling",
+            "Planned. No model has been fitted, and nothing on this page is a result.",
+            "The Midterm predicts `complianceStatus`. The Preliminary phase was not a warm-up "
+            "for it: several of its findings constrain what can honestly be built, and two of "
+            "them make the obvious approach misleading. Those constraints are listed below "
+            "with the figures that produced them, so the modelling starts from what is already "
+            "known rather than rediscovering it.",
+        )
+        st.markdown("**Baselines a model has to beat**")
+        st.caption(
+            "Three exist, and which one applies depends on the modelling-scope decision "
+            "below. They differ by more than thirty points, so quoting the wrong one would "
+            "flatter a result badly. None is fitted — all three are arithmetic on the "
+            "cleaned data, computed in Section 8 item 14."
+        )
+        b1, b2, b3 = st.columns(3)
+        b1.metric("Majority class, all filings", f"{majority:.2f}%")
+        b2.metric("Majority class, complete filings only", f"{_maj_complete:.2f}%")
+        b3.metric("One-rule on isIncompleteFiling", f"{_acc_rule:.2f}%")
+        st.warning(
+            f"**Accuracy alone cannot carry a Midterm result.** A rule that predicts NOT "
+            f"COMPLIED for every structurally incomplete filing and COMPLIED for every "
+            f"complete one — no fitting, no features, one column — reaches "
+            f"{_acc_rule:.2f}%. A model must exceed that figure to have beaten it — a result "
+            f"below {_acc_rule:.2f}% is the worse of the two, and one at "
+            f"{_acc_rule:.0f}% is too coarse a figure to tell which. "
+            f"Its precision is {_prec:.2f}% and recall {_rec:.2f}% (F1 {_f1:.2f}%): it "
+            f"catches nearly every compliant building and is close to useless on the "
+            f"{_fp:,} non-compliant complete filings, which is the only group an "
+            f"enforcement application would target. False positives outnumber false "
+            f"negatives {_fp / _fn:,.0f} to 1, and accuracy hides that completely.",
+        )
+        st.divider()
+        _settled([
+            ("Separation by filing completeness", f"{sep:.2f}%",
+             "`isIncompleteFiling` almost perfectly predicts the target across a third of the "
+             "data. Included as a feature it will dominate, and the resulting accuracy will "
+             "describe filing behaviour rather than energy performance."),
+            ("Filings per building", f"{per_building:.2f}",
+             f"{n_buildings:,} buildings appear repeatedly. A random train/test split puts the "
+             "same building on both sides and inflates the score, so the split must be grouped "
+             "on `buildingId`."),
+            ("Agent levels", f"{diag['n_entities']:,}",
+             "Too many to one-hot encode. Section 6.7.4 tested filer type as a low-cardinality "
+             "substitute and rejected it, so agent identity has to be carried directly — "
+             "high-volume agents retained, the remainder bucketed."),
+        ])
+        st.divider()
+        _open_questions([
+            ("Evaluation metric.",
+             "Item 14 shows why accuracy is the wrong headline, but does not choose the "
+             "replacement. Which of precision, recall, F1 or AUC leads depends on what the "
+             "model is for, and that has not been decided."),
+            ("Modelling scope.",
+             "Whether to model within complete filings only, or keep `isIncompleteFiling` as a "
+             "feature knowing it will dominate. This is a framing decision, not a tuning one."),
+            ("Class balance.",
+             "Untreated and undiscussed."),
+            ("Comparability across years.",
+             "Program Years 2019–2023 received a retroactive filing window that 2024 and 2025 "
+             "did not. A model trained across the whole period treats a policy change as "
+             "building behaviour."),
+            ("Label noise.",
+             "The ordinance exempts unoccupied and mid-demolition buildings from benchmarking. "
+             "Neither is recorded, so an exempt building and one that never filed look "
+             "identical. That places a ceiling on recall no model can cross."),
+        ])
+        st.divider()
+        st.caption(
+            "Every figure above is computed from the loaded file by the same pipeline that "
+            "produces the Preliminary tabs. Nothing on this page is a projection."
+        )
+        return
+
+    _phase_header(
+        "Final — prescriptive analytics",
+        "Scoped. Not started, and partly out of reach from this dataset alone.",
+        "Prescriptive analytics answers what should be done, which needs the cost of acting "
+        "and the cost of not acting. This dataset carries neither. Recording that plainly is "
+        "more useful than proceeding as though it did, so what follows separates what the "
+        "data can support from what it cannot.",
+    )
+    st.markdown("**Reachable from this dataset**")
+    st.markdown(
+        "- **Enforcement targeting.** Ranking buildings or agents by predicted "
+        "non-compliance, which needs the Midterm model and nothing further.\n"
+        "- **Segment prioritisation.** Section 6.9 shows coverage tier predicts whether a "
+        "building files completely rather than whether it complies, which points outreach at "
+        "filing behaviour rather than at energy performance.\n"
+        "- **Agent-level intervention.** Section 6.7 finds compliance varies far more across "
+        "who files than across what is filed, and the self-storage decomposition shows a "
+        "category-level deficit resolving to two operators."
+    )
+    st.markdown("**Not reachable without external data**")
+    st.markdown(
+        "- **Cost-benefit ranking.** No penalty amounts, enforcement costs or retrofit costs "
+        "appear in these 28 columns. Published figures exist but come from compliance vendors "
+        "and a national commissioning study, so importing them means importing assumptions "
+        "with a weaker footing than anything else in this project. Any such use has to be "
+        "declared rather than folded in.\n"
+        "- **Timing decisions.** The dataset has `programYear` but no filing date, so nothing "
+        "here can say when in a cycle an intervention would land.\n"
+        "- **Exempt-building separation.** Certificate-of-occupancy or demolition-permit data "
+        "from LADBS would distinguish a building that need not file from one that did not. "
+        "Nothing in this source can."
+    )
+    st.divider()
+    st.caption(
+        "Listing the limits at this stage is the point. A prescriptive claim built on "
+        "assumptions this dataset cannot support would be the weakest thing in the project."
+    )
+
+
+# ----------------------------------------------------------------------------
 # Header
 # ----------------------------------------------------------------------------
 st.title("EBEWE Program — Descriptive & Diagnostic Dashboard")
@@ -650,6 +823,38 @@ if filtered:
         f"Filtered to program years {year_range[0]}–{year_range[1]}. Figures reflect the "
         "filtered subset, not the full dataset.",
     )
+
+# ----------------------------------------------------------------------------
+# Phase routing
+# ----------------------------------------------------------------------------
+# The course runs Preliminary -> Midterm -> Final. Only the Preliminary is done, and
+# the two later phases are shown rather than hidden so a reader can see the whole
+# arc and what each stage is constrained by.
+#
+# Everything in those two sections is either a figure already computed elsewhere in
+# this app, or an explicit statement that something has not been established. No
+# chart is mocked up and no number is invented: a placeholder that looks like a
+# result is a claim, and this project has not earned those claims yet.
+if phase != PHASE_PRELIM:
+    render_future_phase(phase)
+    st.stop()
+
+# The compliance series is computed here rather than inside the Compliance Trend tab
+# because the Overview spine states the same figures. Computing it twice is how a summary
+# drifts from the page it summarises; there is one definition and both readers of it use
+# the same variables.
+yearly_overall = dff.groupby("programYear")["isCompliant"].mean() * 100
+yearly_complete = dff_complete.groupby("programYear")["isCompliant"].mean() * 100
+yearly_incomplete = dff.groupby("programYear")["isIncompleteFiling"].mean() * 100
+
+if len(yearly_overall) >= 2:
+    _ov_first, _ov_last = yearly_overall.index[0], yearly_overall.index[-1]
+    _ov_drop = yearly_overall.iloc[0] - yearly_overall.iloc[-1]
+    _cm_drop = (yearly_complete.iloc[0] - yearly_complete.iloc[-1]
+                if len(yearly_complete) >= 2 else float("nan"))
+else:
+    _ov_first = _ov_last = yearly_overall.index[0] if len(yearly_overall) else "n/a"
+    _ov_drop = _cm_drop = float("nan")
 
 tabs = st.tabs([
     "Overview",
@@ -666,6 +871,46 @@ tabs = st.tabs([
 # Tab 1 — Overview
 # ----------------------------------------------------------------------------
 with tabs[0]:
+    # The diagnostic chain is the argument this project makes, and until now it was
+    # spread across six tabs a reader had to know to click in the right order. Every
+    # figure below is the same one computed on its own tab; nothing is recalculated
+    # here, so this cannot drift away from the pages it summarises.
+    st.markdown("**The argument, in the order it was found**")
+    _steps = [
+        ("Compliance appears to collapse.",
+         f"The headline rate falls {_ov_drop:.1f} points from {_ov_first} to {_ov_last}.",
+         "Compliance Trend"),
+        ("Most of that is filing completeness, not performance.",
+         f"Among filings that were actually completed the fall is {_cm_drop:.1f} points. "
+         f"Incomplete filings are NOT COMPLIED "
+         f"{diag['incomplete_crosstab_wide'].loc[True, 'NOT COMPLIED']:.2f}% of the time, "
+         f"so a rising incomplete rate reads as falling compliance.",
+         "Data Quality"),
+        ("It is not a decline at all once the buildings are held constant.",
+         "On a fixed panel the series is a one-year break, a multi-year recovery and a "
+         "final-year drop. The 2019 break has a documented cause: LADBS suspended the "
+         "deadlines for Program Years 2019–2021.",
+         "Compliance Trend"),
+        ("What separates buildings is who files, not what the building is.",
+         "Compliance varies far more across responsible agents than across property types, "
+         "on the same complete filings.",
+         "Responsible Entity"),
+        ("And the one property type that looks like an exception is two firms.",
+         "The lowest-compliance category resolves to a pair of large operators; the rest of "
+         "the category sits near the citywide baseline.",
+         "Responsible Entity"),
+    ]
+    for _n, (_head, _body, _where) in enumerate(_steps, start=1):
+        st.markdown(
+            f"<div style='display:flex;gap:0.85rem;padding:0.35rem 0'>"
+            f"<div style='color:{SLATE};font-variant-numeric:tabular-nums;"
+            f"min-width:1.2rem'>{_n}</div>"
+            f"<div><strong>{_head}</strong> {_body} "
+            f"<span style='color:{SLATE}'>&nbsp;→ {_where}</span></div></div>",
+            unsafe_allow_html=True,
+        )
+    st.divider()
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total filings", f"{len(dff):,}")
     c2.metric("Compliance rate", f"{dff['isCompliant'].mean() * 100:.1f}%")
@@ -1199,9 +1444,7 @@ with tabs[3]:
 # ----------------------------------------------------------------------------
 with tabs[4]:
     st.subheader("Figure 5 — Is compliance declining, or is filing completeness?")
-    yearly_overall = dff.groupby("programYear")["isCompliant"].mean() * 100
-    yearly_complete = dff_complete.groupby("programYear")["isCompliant"].mean() * 100
-    yearly_incomplete = dff.groupby("programYear")["isIncompleteFiling"].mean() * 100
+    # series computed once above the tabs; see the note there
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Scatter(x=yearly_overall.index, y=yearly_overall.values,
@@ -1227,8 +1470,7 @@ with tabs[4]:
     )
 
     if len(yearly_overall) >= 2:
-        drop_overall = yearly_overall.iloc[0] - yearly_overall.iloc[-1]
-        drop_complete = yearly_complete.iloc[0] - yearly_complete.iloc[-1]
+        drop_overall, drop_complete = _ov_drop, _cm_drop
         share = (1 - drop_complete / drop_overall) * 100 if drop_overall else np.nan
         c1, c2, c3 = st.columns(3)
         c1.metric(f"Overall decline, {yearly_overall.index[0]}–{yearly_overall.index[-1]}",
@@ -1861,6 +2103,6 @@ with tabs[7]:
 
 st.divider()
 st.caption(
-    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v26.ipynb "
+    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v28.ipynb "
     "(Sections 3–7) · data: Los Angeles Open Data Portal, LADBS (public domain)"
 )
