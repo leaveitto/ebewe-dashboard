@@ -3,7 +3,7 @@ EBEWE Program — Descriptive & Diagnostic Dashboard
 City of Los Angeles, Department of Building and Safety
 
 Preliminary phase deliverable. Every statistic and figure here is computed live
-from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v5.ipynb
+from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v22.ipynb
 (Sections 3-5 cleaning, Section 6 descriptive stats, Section 7 figures).
 Nothing is hardcoded, so a future data refresh flows straight through.
 
@@ -78,7 +78,8 @@ NUMERIC_COLS = [
     "totalWaterUse", "weatherNormSiteEui", "weatherNormSourceEui", "yearBuilt",
 ]
 
-STRUCTURAL_COLS = ["propertyType", "yearBuilt", "grossFloorArea", "occupancy", "entityResponsible"]
+STRUCTURAL_COLS = ["propertyType", "yearBuilt", "grossFloorArea", "occupancy",
+                   "entityResponsible", "numberOfBuildings"]
 
 PLAUSIBILITY_BOUNDS = {
     "siteEui": {"floor": 0, "ceiling": 2000},
@@ -95,6 +96,14 @@ CORR_COLS = ["siteEui", "sourceEui", "co2Emissions", "ghgIntensityPer1kSqft",
 AGE_ORDER = ["1930 or Earlier", "1931-1950", "1951-1970", "1971-1990", "1991-Present"]
 
 MIN_PLAUSIBLE_AREA = 1000
+# A property-type rate computed on a handful of filings is noise, not a segment
+# finding. Types below this are charted but excluded from spread and flagging.
+MIN_TYPE_FILINGS = 100
+# An operator counts as a driver of a category's deficit only if it is large enough to
+# move the category AND materially below baseline. "Materially" is a declared judgement,
+# expressed as a share of the category's own deficit so it scales. Mirrors §6.7.3.
+MIN_OPERATOR_FILINGS = 100
+DEFICIT_SHARE = 0.25
 STRUCTURAL_PAIRS = {
     frozenset(["siteEui", "ghgIntensityPer1kSqft"]),
     frozenset(["sourceEui", "ghgIntensityPer1kSqft"]),
@@ -203,6 +212,14 @@ def load_and_clean(raw_bytes: bytes):
     # 4.4 the incomplete-filing subpopulation
     df["isIncompleteFiling"] = df[STRUCTURAL_COLS].isnull().all(axis=1)
     diag["n_incomplete"] = int(df["isIncompleteFiling"].sum())
+    # Which fields actually share the flag's null mask, verified rather than asserted.
+    # An earlier version of this app stated "five" while its own missingness chart
+    # showed six bars at the same rate; numberOfBuildings has the identical mask.
+    diag["comissing_fields"] = sorted(
+        c for c in df.columns
+        if c != "isIncompleteFiling"
+        and df[c].isnull().equals(df["isIncompleteFiling"])
+    )
     diag["incomplete_crosstab"] = (
         df.groupby("isIncompleteFiling")["complianceStatus"]
         .value_counts(normalize=True).mul(100).round(1)
@@ -588,10 +605,12 @@ with tabs[1]:
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
     _pad_axis(fig, miss["Missing %"])
     st.plotly_chart(fig, width="stretch")
+    _com = diag.get("comissing_fields", [])
     st.info(
-        f"Five structural fields share an identical missing rate — they are missing on the "
-        f"same {diag['n_incomplete']:,} records. That is the pattern captured as "
-        f"`isIncompleteFiling`.",
+        f"{len(_com)} fields share an identical missing mask — not merely a similar rate. "
+        f"They are null on exactly the same {diag['n_incomplete']:,} records, with no "
+        f"exceptions in either direction: {', '.join('`%s`' % c for c in _com)}. "
+        f"That is the pattern captured as `isIncompleteFiling`.",
         icon="🔍",
     )
 
@@ -735,7 +754,11 @@ with tabs[1]:
 # ----------------------------------------------------------------------------
 with tabs[2]:
     st.subheader("Frequency — filing volume by property type (6.1)")
-    vol = dff_seg["propertyType"].value_counts().head(10)
+    # A silent .head(10) dropped two categories while the caption below used the full
+    # selection as its denominator. Cap at 12 to match the Top-12 preset and say so when
+    # the selection is wider, rather than truncating without a note.
+    _vol_all = dff_seg["propertyType"].value_counts()
+    vol = _vol_all.head(12)
     if len(vol):
         fig = px.bar(x=vol.values, y=vol.index, orientation="h",
                      labels={"x": "Number of Filings", "y": ""}, text=vol.values)
@@ -745,9 +768,15 @@ with tabs[2]:
                           yaxis={"autorange": "reversed"})
         _pad_axis(fig, vol.values)
         st.plotly_chart(fig, width="stretch")
+        if len(_vol_all) > len(vol):
+            st.caption(
+                f"Showing the {len(vol)} largest of {len(_vol_all)} types in the current "
+                f"selection. The percentages below are computed on all "
+                f"{len(dff_seg):,} filings in the selection, not on the plotted subset."
+            )
         if len(vol) >= 2:
-            # Share is computed against every complete filing, not just the plotted top 10,
-            # so the sentence cannot overstate dominance when the chart is filtered.
+            # Share is computed against every complete filing in the selection, not just the
+            # plotted bars, so the sentence cannot overstate dominance when the chart is capped.
             share = vol.iloc[0] / len(dff_seg) * 100 if len(dff_seg) else 0
             ratio = vol.iloc[0] / vol.iloc[1]
             if ratio >= 1.5:
@@ -920,8 +949,11 @@ with tabs[3]:
 
     st.divider()
     st.subheader("Figure 2 — Compliance rate by property type")
-    comp_rate = (dff_seg.groupby("propertyType")["isCompliant"].mean()
-                 .sort_values(ascending=False) * 100)
+    _type_stats = dff_seg.groupby("propertyType")["isCompliant"].agg(["mean", "count"])
+    _type_stats["mean"] *= 100
+    _small = _type_stats[_type_stats["count"] < MIN_TYPE_FILINGS]
+    comp_rate = (_type_stats[_type_stats["count"] >= MIN_TYPE_FILINGS]["mean"]
+                 .sort_values(ascending=False))
     if len(comp_rate):
         colors = [RED if v < 80 else BLUE for v in comp_rate.values]
         fig = go.Figure(go.Bar(x=comp_rate.values, y=comp_rate.index, orientation="h",
@@ -932,16 +964,24 @@ with tabs[3]:
                       annotation_text=f"Avg {comp_rate.mean():.1f}%",
                       annotation_position="bottom left")
         fig.add_vline(x=80, line_dash="dot", line_color=RED,
-                      annotation_text="80% benchmark", annotation_position="top left")
+                      annotation_text="80% reference line", annotation_position="top left")
         fig.update_layout(height=max(380, 30 * len(comp_rate)),
                           xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                           xaxis_range=[0, 108],
-                          title="Red = below the 80% policy benchmark")
+                          title="Red = below the 80% reference line")
         st.plotly_chart(fig, width="stretch")
     st.caption(
-        "An 80% threshold is used rather than the citywide average, so a bar's color only "
-        "changes when that property type's own rate changes."
+        "The 80% line is a fixed reading aid chosen for this analysis, not a target set by "
+        "the EBEWE ordinance — the ordinance sets filing deadlines and per-building fees, "
+        "not a compliance-rate goal. It is used rather than the citywide average so a bar's "
+        "colour only changes when that property type's own rate changes."
     )
+    if len(_small):
+        st.caption(
+            f"{len(_small)} type(s) with fewer than {MIN_TYPE_FILINGS} complete filings are "
+            f"excluded from this chart: a rate computed on a handful of filings would swing "
+            f"across the line on one building."
+        )
 
     st.divider()
     c1, c2 = st.container(), st.container()
@@ -963,15 +1003,28 @@ with tabs[3]:
         st.divider()
     with c2:
         st.subheader("Figure 4 — Top 15 postal codes by total emissions")
+        # Summed across every program year in the current range, so at more than one
+        # filing per building this stacks repeated annual readings rather than measuring
+        # a single year. The axis is labelled with the range it covers, and the ratio is
+        # computed below rather than quoted — an earlier version hardcoded "~8.4", the
+        # same untraced figure §6.5.1 used to carry.
         zips = (dff.groupby("postalCode")["co2Emissions"].sum()
                 .sort_values(ascending=False).head(15))
+        _yr_lo, _yr_hi = int(dff["programYear"].min()), int(dff["programYear"].max())
+        _n_bldg = dff["buildingId"].nunique()
+        _fpb = len(dff) / _n_bldg if _n_bldg else float("nan")
         fig = px.bar(x=zips.values, y=zips.index, orientation="h",
-                     labels={"x": "Total CO2e (Metric Tons)", "y": "Postal Code"})
+                     labels={"x": f"Total CO2e, {_yr_lo}\u2013{_yr_hi} (Metric Tons)",
+                             "y": "Postal Code"})
         fig.update_traces(marker_color=GREEN)
         fig.update_layout(height=560, yaxis={"autorange": "reversed", "type": "category"})
         st.plotly_chart(fig, width="stretch")
-        st.caption("Total, not average — this view is about where retrofit and enforcement "
-                   "resources should go, which depends on total carbon impact.")
+        st.caption(f"Total, not average — this view is about where retrofit and enforcement "
+                   f"resources should go, which depends on total carbon impact. The bars sum "
+                   f"every filing from {_yr_lo} to {_yr_hi} — {_n_bldg:,} buildings at "
+                   f"{_fpb:.2f} filings each — so a postal code with more years of coverage "
+                   f"accumulates more; the top ranks are stable but the tail "
+                   f"shifts if a single year is used instead.")
 
 # ----------------------------------------------------------------------------
 # Tab 5 — Compliance Trend (Figure 5 + Section 6.5)
@@ -1123,6 +1176,32 @@ with tabs[5]:
         "record. It is therefore the only structural field that can answer which buildings "
         "file incompletely."
     )
+    # The ordinance floor is 20,000 sq ft for private buildings and 7,500 for city-owned
+    # ones, so the tiers below 20,000 exist only because city-owned buildings are covered
+    # lower. Checked against the data rather than asserted from the ordinance text.
+    _own = pd.crosstab(dff["sizeBand"], dff["isCityOwned"])
+    for _c in (False, True):
+        if _c not in _own.columns:
+            _own[_c] = 0
+    _small = [b for b in _own.index if str(b).startswith(("7,500", "15,000"))]
+    if _small:
+        _priv = int(_own.loc[_small, False].sum())
+        _city = int(_own.loc[_small, True].sum())
+        if _priv == 0:
+            st.caption(
+                f"The ordinance covers privately owned buildings at 20,000 sq ft and "
+                f"city-owned buildings at 7,500, so the tiers below 20,000 sq ft exist only "
+                f"because city ownership lowers the floor. That holds in this data: "
+                f"{', '.join(_small)} together hold {_city:,} filings and not one is "
+                f"privately owned. A compliance gap at the small end of the ranking below is "
+                f"therefore an ownership difference as well as a size one."
+            )
+        else:
+            st.caption(
+                f"Note: {_priv:,} privately owned filing(s) appear below the 20,000 sq ft "
+                f"ordinance floor, alongside {_city:,} city-owned. Size and ownership are not "
+                f"fully entangled at the small end in this selection."
+            )
 
     _bands = (dff.groupby("sizeBand")["isIncompleteFiling"].size()
               .sort_values(ascending=False).index.tolist())
@@ -1255,7 +1334,17 @@ with tabs[6]:
         )
     else:
         _base = dff_complete["isCompliant"].mean() * 100
-        _types = dff_seg.groupby("propertyType")["isCompliant"].mean() * 100
+        # The two spreads do not share a denominator: agents are ranked across every
+        # complete filing, property types across the current sidebar selection. An earlier
+        # version described them as "the same basis", which was not true. Both bases are
+        # now stated, and the all-types figure is computed alongside so the reader can see
+        # how much the selection is doing.
+        _tstat = dff_seg.groupby("propertyType")["isCompliant"].agg(["mean", "count"])
+        _tstat["mean"] *= 100
+        _types = _tstat[_tstat["count"] >= MIN_TYPE_FILINGS]["mean"]
+        _tall = dff_complete.groupby("propertyType")["isCompliant"].agg(["mean", "count"])
+        _tall["mean"] *= 100
+        _tall = _tall[_tall["count"] >= MIN_TYPE_FILINGS]["mean"]
 
         c1, c2, c3 = st.columns(3)
         c1.metric(f"Agents with {MIN_FILINGS}+ filings", f"{len(_big):,}")
@@ -1269,16 +1358,22 @@ with tabs[6]:
         if len(_types) > 2:
             _wo = _types.drop(_types.idxmin())
             st.caption(
-                f"Same comparison, same basis. The property-type spread is "
-                f"{_types.max() - _types.min():.0f} points, but almost all of it is one "
-                f"category ({_types.idxmin().title()}, {_types.min():.1f}%) — drop it and the "
-                f"remaining eleven span {_wo.max() - _wo.min():.0f} points. The responsible "
-                f"entity discriminates far more sharply than building function does, and the "
-                f"one category that looks like an exception is decomposed below."
+                f"The two figures use different denominators and are not directly comparable "
+                f"as ratios: the agent spread covers every agent with {MIN_FILINGS}+ complete "
+                f"filings across all {len(dff_complete):,} of them, while the property-type "
+                f"spread covers the {len(_types)} types in the current selection with "
+                f"{MIN_TYPE_FILINGS}+ filings. On that selection the type spread is "
+                f"{_types.max() - _types.min():.1f} points, and the lowest "
+                f"({_types.idxmin().title()}, {_types.min():.1f}%) accounts for much of it — "
+                f"drop it and the remaining {len(_wo)} span {_wo.max() - _wo.min():.1f} "
+                f"points. Across all {len(_tall)} qualifying types it is "
+                f"{_tall.max() - _tall.min():.1f} points. On either basis the responsible "
+                f"entity discriminates more sharply than building function does, and the "
+                f"category that looks like an exception is decomposed below."
             )
         else:
-            st.caption("Same comparison, same basis. The responsible entity discriminates "
-                       "far more sharply than building function does.")
+            st.caption(f"Too few property types in the current selection to report a spread. "
+                       f"The agent spread covers all {len(dff_complete):,} complete filings.")
 
         _show = pd.concat([_big.head(10), _big.tail(10)]).drop_duplicates()
         fig = go.Figure(go.Bar(
@@ -1337,15 +1432,27 @@ with tabs[6]:
         st.subheader("Is the lowest property type a category or its operators?")
         _flagged = _types[_types < 80].sort_values()
         if _flagged.empty:
-            st.info("No property type falls below the 80% benchmark in the current selection.",
-                    icon="ℹ️")
+            st.info("No property type falls below the 80% reference line in the current "
+                    "selection.", icon="ℹ️")
         else:
             _t = _flagged.index[0]
             _cat = dff_complete[dff_complete["propertyType"] == _t]
             _ops = (_cat.groupby("entityResponsible")["isCompliant"]
                     .agg(["mean", "count"]).sort_values("count", ascending=False))
             _ops["mean"] = (_ops["mean"] * 100).round(1)
-            _drv = _ops[(_ops["count"] >= 100) & (_ops["mean"] < _base)].index.tolist()
+            # Match notebook §6.7.3. A bare `mean < _base` treats an operator 0.2 points
+            # below baseline as equivalent to one 41 points below, which swept VERT ENERGY
+            # GROUP, INC (92.1% against a 92.2% baseline) in as a self-storage "driver".
+            # The margin is a declared share of the category's own deficit, so it scales
+            # with the category and the baseline instead of being a bare number of points.
+            _cat_rate = _cat["isCompliant"].mean() * 100
+            _deficit = _base - _cat_rate
+            _margin = DEFICIT_SHARE * _deficit
+            _large = _ops[_ops["count"] >= MIN_OPERATOR_FILINGS]
+            _drv = _large[_large["mean"] < _base - _margin].index.tolist()
+            _sens = {sh: _large[_large["mean"] < _base - sh * _deficit].index.tolist()
+                     for sh in (0.10, 0.25, 0.50, 0.75)}
+            _unguarded = _large[_large["mean"] < _base].index.tolist()
 
             if not _drv:
                 st.caption(f"No single large operator accounts for the {_t} deficit — it looks "
@@ -1370,9 +1477,23 @@ with tabs[6]:
                     f"filings sit {abs(_base-_rest_r):.1f} points from the {_base:.1f}% baseline "
                     f"— against a {abs(_rest_r-_drv_r):.1f}-point gap between the two groups. "
                     f"Had they filed at baseline, {_t} would sit at {_cf:.1f}% and would not fall "
-                    f"below the 80% line in Figure 2 at all. This is an operator effect "
+                    f"below the 80% reference line in Figure 2 at all. This is an operator "
+                    f"effect "
                     f"presenting as a building-function effect.",
                     icon="🔍",
+                )
+                _rows = [f"{sh:.0%} ({_base - sh*_deficit:.1f}%): {len(a)} operator(s)"
+                         f" — {', '.join(a) if a else 'none'}"
+                         for sh, a in _sens.items()]
+                st.caption(
+                    f"Driver rule: {MIN_OPERATOR_FILINGS}+ filings in the category and at "
+                    f"least {_margin:.1f} points below the {_base:.1f}% baseline "
+                    f"({DEFICIT_SHARE:.0%} of the category's own {_deficit:.1f}-point "
+                    f"deficit). The margin is a judgement, so its effect is shown: "
+                    + " · ".join(_rows)
+                    + f" · unguarded rule (0%): {len(_unguarded)} operator(s). If the "
+                    f"selected set moves across that range the decomposition is fragile "
+                    f"and should not be read as a finding."
                 )
                 st.dataframe(_ops.head(8).rename(
                     columns={"mean": "compliance %", "count": "filings"}), width="stretch")
@@ -1439,29 +1560,71 @@ with tabs[6]:
             if len(_t2) >= 2:
                 _sp1 = _t1["Compliance %"].max() - _t1["Compliance %"].min()
                 _sp2 = _t2["Compliance %"].max() - _t2["Compliance %"].min()
-                if _sp2 < 5:
+                # The test is self-filed against outsourced, not the max-minus-min spread.
+                # The spread lands near 5 points and moves either side of it depending on how
+                # a handful of borderline agents are named, so it is reported but not used as
+                # a decision rule. An earlier version keyed a verdict off a 5-point cutoff and
+                # returned the opposite conclusion to the notebook on a 0.2-point difference.
+                #
+                # Outsourced pools VENDOR and MANAGER: a property manager filing on an
+                # owner's behalf is outsourcing as much as a compliance vendor is. An earlier
+                # version tested OWNER against VENDOR alone, which dropped managers from the
+                # outsourced side of a hypothesis about outsourcing. Mirrors §6.7.4.
+                _d = _t2.set_index("Filer type")["Compliance %"].to_dict()
+                _n = _t2.set_index("Filer type")["Filings"].to_dict()
+                if "OWNER" in _d:
+                    _out_types = [t for t in ("VENDOR", "MANAGER") if t in _d]
+                    _out_ags = [a for a, r in _known.iterrows()
+                                if r["type"] in _out_types and a not in _movers]
+                    _out_f = dff_complete[dff_complete["entityResponsible"].isin(_out_ags)]
+                    _out_r = _out_f["isCompliant"].mean() * 100 if len(_out_f) else float("nan")
+                    _ov = abs(_d["OWNER"] - _out_r)
+                    _mgr = _d.get("MANAGER")
+                    _mgr_n = int(_n.get("MANAGER", 0))
                     st.warning(
-                        f"**The outsourcing hypothesis does not hold.** The gap across filer "
-                        f"types falls from {_sp1:.1f} to {_sp2:.1f} points once the "
-                        f"regime-changing agents are removed, so the apparent effect is those "
-                        f"specific firms rather than a general property of who files. Filer type "
-                        f"is not a viable low-cardinality substitute: a model must carry agent "
-                        f"identity itself, with high-volume agents retained and the rest bucketed.",
+                        f"**Outsourcing does not explain the agent effect.** With the two "
+                        f"regime-changing agents removed, self-filed buildings (OWNER, "
+                        f"{int(_n['OWNER']):,} filings) comply at {_d['OWNER']:.1f}% and "
+                        f"outsourced ones ({' + '.join(_out_types)}, {len(_out_f):,} filings) "
+                        f"at {_out_r:.1f}% — a gap of {_ov:.1f} points"
+                        + (f", both within a point of the {_base:.1f}% baseline"
+                           if max(abs(_d["OWNER"] - _base), abs(_out_r - _base)) < 1
+                           else f", against a {_base:.1f}% baseline")
+                        + (". Paying someone else to file is not associated with a better "
+                           "outcome here." if _out_r <= _d["OWNER"] + 1 else
+                           ". The two sit close enough that filer type does not separate them "
+                           "usefully.")
+                        + (f" Vendors alone sit at {_d['VENDOR']:.1f}%, "
+                           + ("at or below baseline, " if _d["VENDOR"] <= _base else "above baseline, ")
+                           + "so this is not an artefact of pooling them with managers."
+                           if "VENDOR" in _d else "")
+                        + (f" Manager-filed buildings do sit higher ({_mgr:.1f}% on "
+                           f"{_mgr_n:,} filings), but on a small base with most of that group "
+                           f"near 100% — suggestive, not a finding." if _mgr is not None else "")
+                        + f" Filer type is not a viable low-cardinality substitute: a model "
+                          f"must carry agent identity, with high-volume agents retained and "
+                          f"the rest bucketed.",
                         icon="⚠️",
                     )
-                else:
-                    st.success(
-                        f"The filer-type gap survives removal of the regime-changing agents "
-                        f"({_sp1:.1f} to {_sp2:.1f} points), so it is not driven by those firms "
-                        f"alone. Filer type is worth testing as a low-cardinality feature "
-                        f"alongside agent identity.",
-                        icon="✅",
+                    st.caption(
+                        f"Reported for completeness: the widest gap between any two filer "
+                        f"types is {_sp1:.1f} points across all classified agents and "
+                        f"{_sp2:.1f} points with the regime-changers removed. That figure "
+                        f"depends on which side a few ambiguously named firms are placed on, "
+                        f"so it is not used to decide the question."
                     )
             _unc = _typed[_typed["type"] == "UNCLASSIFIED"]
             if len(_unc):
-                st.caption(f"{len(_unc)} agent(s) unclassified by the keyword rules. Because they "
-                           "sit at high compliance, classifying them would narrow the gap further "
-                           "rather than widen it.")
+                _uf = dff_complete[dff_complete["entityResponsible"].isin(_unc.index)]
+                _ur = _uf["isCompliant"].mean() * 100 if len(_uf) else float("nan")
+                st.caption(
+                    f"{len(_unc)} agent(s) unclassified by the keyword rules, covering "
+                    f"{len(_uf):,} filings at {_ur:.1f}% compliance. They sit high, but the "
+                    f"effect of classifying them depends on which group they join — joining "
+                    f"the highest group would widen the gap, joining the lowest would narrow "
+                    f"it. This residual is a limitation of the classification, not something "
+                    f"the result is demonstrably robust to."
+                )
 
 # ----------------------------------------------------------------------------
 # Tab 8 — Correlations (Figure 6 + Section 6.6)
@@ -1509,10 +1672,12 @@ with tabs[7]:
     st.dataframe(pd.DataFrame(flagged) if flagged else pd.DataFrame({"Pair": ["None"]}),
                  width="stretch", hide_index=True)
     st.markdown(
-        "**Modeling recommendation for Midterm:** `co2Emissions` is the shared input behind "
-        "both the EUI fields and the GHG-intensity field. Use *either* the EUI fields *or* "
-        "`ghgIntensityPer1kSqft` in a given model — including both adds no information, it "
-        "just inflates the standard errors on both coefficients."
+        "**Modeling recommendation for Midterm:** what `siteEui` and `ghgIntensityPer1kSqft` "
+        "share is normalisation by floor area, not a common input — `co2Emissions` itself "
+        "correlates with `siteEui` at only r ≈ 0.42, and with `grossFloorArea` at r ≈ 0.44, "
+        "because it is a building-size quantity while the two intensities are size-neutral. "
+        "Use *either* the EUI fields *or* `ghgIntensityPer1kSqft` in a given model — including "
+        "both adds no information, it just inflates the standard errors on both coefficients."
     )
 
     st.divider()
@@ -1536,6 +1701,6 @@ with tabs[7]:
 
 st.divider()
 st.caption(
-    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v21.ipynb "
-    "(Sections 3–9) · data: Los Angeles Open Data Portal, LADBS (public domain)"
+    "EBEWE Preliminary Dashboard · pipeline mirrors EBEWE_Prelim_Analysis_v22.ipynb "
+    "(Sections 3–7) · data: Los Angeles Open Data Portal, LADBS (public domain)"
 )
