@@ -187,6 +187,18 @@ st.markdown(
         h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
         .stMarkdown p, .stAlert p { max-width: none; }
         [data-testid="stSidebar"] { break-before: page; }
+        /* Plotly renders a fixed-width SVG sized to the browser viewport. On paper that
+           width is not reduced, so wide charts and tables ran off the right edge — whole
+           bars lost, not just their labels. Constraining both to the page is what actually
+           fixes the exported PDFs; the axis headroom on individual figures never was the
+           cause. */
+        .js-plotly-plot, .js-plotly-plot .plotly, .js-plotly-plot .svg-container,
+        .js-plotly-plot svg, [data-testid="stPlotlyChart"] {
+          max-width: 100% !important; width: 100% !important;
+        }
+        [data-testid="stDataFrame"], [data-testid="stDataFrame"] > div {
+          max-width: 100% !important; width: 100% !important; overflow: visible !important;
+        }
       }
       </style>
     """,
@@ -455,9 +467,14 @@ def load_and_clean(raw_bytes: bytes):
     )
     # Wide form so each cell can be surfaced as its own metric rather than a
     # dataframe whose "% of group" column gets truncated at narrow widths.
+    # Not rounded here. Rounding at construction fixes the precision for every consumer:
+    # the COMPLIED cell became exactly 0.04, so the Overview metric read 0.04% while the
+    # headline sentence above it — computed from the raw counts — said 0.035%. Same 11
+    # filings, two figures on one screen. Each display site now chooses its own precision
+    # from the full value.
     diag["incomplete_crosstab_wide"] = (
         pd.crosstab(df["isIncompleteFiling"], df["complianceStatus"], normalize="index")
-        .mul(100).round(2)
+        .mul(100)
         .reindex(columns=["COMPLIED", "NOT COMPLIED"], fill_value=0.0)
         .reindex(index=[False, True], fill_value=0.0)
     )
@@ -1065,9 +1082,18 @@ tabs should be read — and what a Midterm classifier can honestly be built on.
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Complete filings — COMPLIED", f"{ct.loc[False, 'COMPLIED']:.2f}%")
     k2.metric("Complete filings — NOT COMPLIED", f"{ct.loc[False, 'NOT COMPLIED']:.2f}%")
-    k3.metric("Incomplete filings — COMPLIED", f"{ct.loc[True, 'COMPLIED']:.2f}%",
-              help="Two decimals on purpose — at one decimal this rounds to 0.0% and "
+    # Three decimals, matching the headline sentence above. At two decimals this read
+    # 0.04% while the sentence said 0.035% — the same 11 filings shown two ways on one
+    # screen. At one decimal it rounds to 0.0% and reads as a literal zero, which is the
+    # claim the whole section exists to refute.
+    k3.metric("Incomplete filings — COMPLIED", f"{ct.loc[True, 'COMPLIED']:.3f}%",
+              help="Three decimals on purpose — at one decimal this rounds to 0.0% and "
                    "reads as a literal zero when it is not one.")
+    # Two decimals here, three above, and the asymmetry is deliberate. 99.96% is the
+    # figure this project uses everywhere for the separation rate, including the notebook;
+    # showing 99.965% here would put a third figure into circulation for one quantity. The
+    # COMPLIED cell needs its third decimal because 0.04% reads as a rounder number than
+    # 0.035% is, and at one decimal it reads as zero — which is the claim §4.4 refutes.
     k4.metric("Incomplete filings — NOT COMPLIED", f"{ct.loc[True, 'NOT COMPLIED']:.2f}%")
     st.caption(
         "Computed on the full dataset (Section 4.4), not the filtered subset, since it "
@@ -1472,7 +1498,7 @@ with tabs[3]:
                       annotation_text="80% reference line", annotation_position="top left")
         fig.update_layout(height=max(380, 30 * len(comp_rate)),
                           xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
-                          xaxis_range=[0, 108],
+                          xaxis_range=[0, 118],   # 18% headroom, matching _pad_axis
                           title="Below the 80% reference line is marked in ochre")
         chart(fig)
     st.caption(
@@ -1874,18 +1900,20 @@ with tabs[6]:
                 "ratios. Both bases are stated so the comparison can be read for what it is."
             )
             st.dataframe(pd.DataFrame([
+                # Range second, not last. It is the only column carrying a number and it was
+                # the one that truncated, leaving three rows of denominators and no figures.
                 {"Spread": "Across responsible agents",
+                 "Range": f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts",
                  "Basis": f"agents with {MIN_FILINGS}+ complete filings",
-                 "Population": f"all {len(dff_complete):,} complete filings",
-                 "Range": f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts"},
+                 "Population": f"all {len(dff_complete):,} complete filings"},
                 {"Spread": "Across property types (current selection)",
+                 "Range": f"{_types.max() - _types.min():.1f} pts",
                  "Basis": f"types with {MIN_TYPE_FILINGS}+ filings",
-                 "Population": f"{len(_types)} types in the selection",
-                 "Range": f"{_types.max() - _types.min():.1f} pts"},
+                 "Population": f"{len(_types)} types in the selection"},
                 {"Spread": "Across property types (all qualifying)",
+                 "Range": f"{_tall.max() - _tall.min():.1f} pts",
                  "Basis": f"types with {MIN_TYPE_FILINGS}+ filings",
-                 "Population": f"{len(_tall)} types",
-                 "Range": f"{_tall.max() - _tall.min():.1f} pts"},
+                 "Population": f"{len(_tall)} types"},
             ]), width="stretch", hide_index=True)
             st.caption(
                 f"The lowest type ({_types.idxmin().title()}, {_types.min():.1f}%) accounts "
@@ -2015,15 +2043,23 @@ with tabs[6]:
                     f"if the selected set moved across this range the decomposition would be "
                     f"fragile and should not be read as a finding."
                 )
+                # Column order matters here. "Selected" carries the whole finding — the set
+                # is the same at every margin and gains a third operator only at 0% — and it
+                # was last, so it was the column that truncated. Every row then displayed the
+                # same two names and the one row that differs looked identical to the four
+                # that do not, which is the opposite of what the table is for. It now sits
+                # second. The "Operators" count is dropped as redundant: the names are there
+                # to be counted, and it was occupying width the names needed.
                 _sens_rows = [
-                    {"Margin": f"{sh:.0%} of deficit", "Threshold": f"{_base - sh*_deficit:.1f}%",
-                     "Operators": len(a), "Selected": ", ".join(a) if a else "none"}
+                    {"Margin": f"{sh:.0%} of deficit",
+                     "Selected": ", ".join(a) if a else "none",
+                     "Threshold": f"{_base - sh*_deficit:.1f}%"}
                     for sh, a in _sens.items()
                 ]
                 _sens_rows.append({
-                    "Margin": "0% (unguarded)", "Threshold": f"{_base:.1f}%",
-                    "Operators": len(_unguarded),
-                    "Selected": ", ".join(_unguarded) if _unguarded else "none"})
+                    "Margin": "0% (unguarded)",
+                    "Selected": ", ".join(_unguarded) if _unguarded else "none",
+                    "Threshold": f"{_base:.1f}%"})
                 st.dataframe(pd.DataFrame(_sens_rows), width="stretch", hide_index=True)
                 st.dataframe(_ops.head(8).rename(
                     columns={"mean": "compliance %", "count": "filings"}), width="stretch")
