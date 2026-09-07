@@ -3,7 +3,7 @@ EBEWE Program — Descriptive & Diagnostic Dashboard
 City of Los Angeles, Department of Building and Safety
 
 Preliminary phase deliverable. Every statistic and figure here is computed live
-from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v29.ipynb
+from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v30.ipynb
 (Sections 3-5 cleaning, Section 6 descriptive stats, Section 7 figures).
 Nothing is hardcoded, so a future data refresh flows straight through.
 
@@ -1672,10 +1672,10 @@ with tabs[5]:
     st.subheader("Coverage tier predicts filing, not compliance")
     st.caption(
         "`ladbsBuildingCategory` is the ordinance's own size and ownership segmentation. "
-        "Unlike propertyType, yearBuilt, grossFloorArea, occupancy and entityResponsible — "
-        "all missing on the structurally incomplete filings — it is populated on every "
-        "record. It is therefore the only structural field that can answer which buildings "
-        "file incompletely."
+        f"Unlike {', '.join(diag.get('comissing_fields', STRUCTURAL_COLS))} — all missing "
+        f"on the structurally incomplete filings — it is populated on every record. It is "
+        f"therefore the only structural field that can answer which buildings file "
+        f"incompletely."
     )
     # The ordinance floor is 20,000 sq ft for private buildings and 7,500 for city-owned
     # ones, so the tiers below 20,000 exist only because city-owned buildings are covered
@@ -1773,7 +1773,10 @@ with tabs[5]:
         st.caption(
             "Tiers moving together in one year points to a programme-wide change; one tier "
             "moving alone points to that tier's own phase-in date. Read alongside the "
-            "Compliance Trend tab, where the 2019 break is documented as a deadline suspension."
+            "Compliance Trend tab. The 2019 break has one documented cause — deadlines for "
+            "Program Years 2019–2021 were tolled — and the size-tier phase-in is not a second "
+            "one: the 20,000–49,999 sq ft band steps at 2018, which is visible in the chart "
+            "below."
         )
         _piv = (dff.pivot_table(index="programYear", columns="sizeBand",
                                 values="isIncompleteFiling", aggfunc="mean") * 100).round(1)
