@@ -3,7 +3,7 @@ EBEWE Program — Descriptive & Diagnostic Dashboard
 City of Los Angeles, Department of Building and Safety
 
 Preliminary phase deliverable. Every statistic and figure here is computed live
-from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v28.ipynb
+from the uploaded CSV using the same pipeline as EBEWE_Prelim_Analysis_v29.ipynb
 (Sections 3-5 cleaning, Section 6 descriptive stats, Section 7 figures).
 Nothing is hardcoded, so a future data refresh flows straight through.
 
@@ -969,8 +969,11 @@ with tabs[0]:
          "Data Quality"),
         ("It is not a decline at all once the buildings are held constant.",
          "On a fixed panel the series is a one-year break, a multi-year recovery and a "
-         "final-year drop. The 2019 break has a documented cause: LADBS suspended the "
-         "deadlines for Program Years 2019–2021.",
+         "final-year drop. The 2019 break has a documented cause: LADBS tolled the "
+         "deadlines for Program Years 2019–2021. When they were reinstated in 2023, "
+         "Program Years 2019 through 2023 all fell due together — two different windows, "
+         "which is why the Midterm page cites the wider range when discussing "
+         "comparability across years.",
          "Compliance Trend"),
         ("What separates buildings is who files, not what the building is.",
          "Compliance varies far more across responsible agents than across property types, "
@@ -1032,12 +1035,17 @@ with tabs[0]:
                 f"Only {n_inc_complied:,} of {n_inc:,} incomplete filings — "
                 f"{pct_complied:.3f}% — are recorded as COMPLIED."
             )
+        # The field list is read from the same computation the Data Quality tab uses,
+        # not typed out here. It was typed out here, and when numberOfBuildings was added
+        # to STRUCTURAL_COLS the Data Quality callout updated and this sentence did not —
+        # so the two tabs disagreed on how many fields the flag covers.
+        _com = diag.get("comissing_fields", STRUCTURAL_COLS)
+        _com_names = ", ".join(_com[:-1]) + f" and {_com[-1]}" if len(_com) > 1 else _com[0]
         st.markdown(
             f"""
-`isIncompleteFiling` flags records where **propertyType, yearBuilt, grossFloorArea,
-occupancy, and entityResponsible are all missing together** — not independently. That
-joint pattern points to a submission that was never completed, rather than five
-unrelated data gaps.
+`isIncompleteFiling` flags records where **{_com_names} are all missing together** — not
+independently. That joint pattern points to a submission that was never completed,
+rather than {len(_com)} unrelated data gaps.
 
 **{headline_line}**
 
@@ -1842,10 +1850,14 @@ with tabs[6]:
 
         c1, c2, c3 = st.columns(3)
         c1.metric(f"Agents with {MIN_FILINGS}+ filings", f"{len(_big):,}")
+        # One decimal, not zero. The per-agent rates are rounded to 1dp above, so this
+        # spread is exactly 98.5 on the current data — and Python's round-half-to-even
+        # rendered that as "98" while the table below said 98.5. Two figures for one
+        # quantity, differing only by how they were displayed.
         c2.metric("Spread across agents",
-                  f"{_big['compliance'].max() - _big['compliance'].min():.0f} pts")
+                  f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts")
         c3.metric("Spread across property types",
-                  f"{_types.max() - _types.min():.0f} pts" if len(_types) > 1 else "n/a")
+                  f"{_types.max() - _types.min():.1f} pts" if len(_types) > 1 else "n/a")
         # The property-type spread is dominated by whichever single category sits below
         # the benchmark; report it with and without, since the decomposition below shows
         # that outlier is itself an operator effect.
