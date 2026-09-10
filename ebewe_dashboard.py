@@ -528,6 +528,37 @@ def load_and_clean(raw_bytes: bytes):
         for k, v in _present.items()]
     if _present:
         df["entityResponsible"] = df["entityResponsible"].replace(_present)
+
+    # 4.6c legal-form merge. A group whose labels differ ONLY by punctuation and legal
+    # form is one organisation spelled two ways. A group where a real word differs
+    # (HARPER MANAGEMENT vs HARPER ENTERPRISES, LP) may be two filers, and 4.8 reports
+    # those instead. The test is mechanical — no group is adjudicated by hand — so the
+    # merge is auditable and reversible by editing _LEGAL alone.
+    _LEGAL = {"LLC", "L", "C", "INC", "INCORPORATED", "CORP", "CORPORATION", "CO",
+              "COMPANY", "LP", "LLP", "LTD", "LIMITED", "THE", "TRUST", "REIT"}
+    _lc = df.loc[df["entityResponsible"] != "UNKNOWN", "entityResponsible"].value_counts()
+    _lf = pd.DataFrame({"raw": _lc.index, "filings": _lc.values})
+    _lf["toks"] = _lf["raw"].astype(str).str.upper().str.replace(
+        r"[^A-Z0-9 ]", " ", regex=True).str.split()
+    _lf["key"] = _lf["toks"].apply(lambda t: " ".join(w for w in t if w not in _LEGAL))
+    _lf = _lf[_lf["key"] != ""]
+
+    _legal_map = {}
+    for _k, _g in _lf.groupby("key"):
+        if len(_g) < 2:
+            continue
+        _sets = [set(t) for t in _g["toks"]]
+        if set().union(*_sets) - set.intersection(*_sets) <= _LEGAL:
+            _canon = _g.sort_values("filings", ascending=False)["raw"].iloc[0]
+            for _r in _g["raw"]:
+                if _r != _canon:
+                    _legal_map[_r] = _canon
+
+    diag["legal_merge_labels"] = len(_legal_map)
+    diag["legal_merge_groups"] = len(set(_legal_map.values()))
+    if _legal_map:
+        df["entityResponsible"] = df["entityResponsible"].replace(_legal_map)
+    
     diag["n_entities"] = int(df.loc[df["entityResponsible"] != "UNKNOWN",
                                     "entityResponsible"].nunique())
 
