@@ -1110,21 +1110,21 @@ with tabs[1]:
         "(Section 4.2). Left as-is, pandas would treat that string as a valid category."
     )
     miss = diag["missing_report"].reset_index(names="Column")
+    _com = diag.get("comissing_fields", [])
+    _m = miss.sort_values("Missing %")
     fig = px.bar(
-        miss.sort_values("Missing %"),
+        _m,
         x="Missing %", y="Column", orientation="h",
-        color=miss.sort_values("Missing %")["Missing %"] > 50,
-        # The co-missing structural fields are the finding; everything else is context.
-        # An earlier version coloured the highest-missing columns red, which read as
-        # "bad data" — sparsity here is a property of the published source.
-        color_discrete_map={True: SLATE, False: CIVIC},
+        color=_m["Column"].isin(_com),
+        # Colour marks membership in the co-missing set, not a missingness threshold.
+        # The six identical masks are the finding; every other column is context.
+        color_discrete_map={True: CIVIC, False: SLATE},
         text="Missing %",
     )
     fig.update_layout(height=650, showlegend=False, xaxis_title="Missing (%)")
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
     _pad_axis(fig, miss["Missing %"])
     chart(fig)
-    _com = diag.get("comissing_fields", [])
     st.info(
         f"{len(_com)} fields share an identical missing mask — not merely a similar rate. "
         f"They are null on exactly the same {diag['n_incomplete']:,} records, with no "
