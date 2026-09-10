@@ -519,8 +519,10 @@ def load_and_clean(raw_bytes: bytes):
 
     # Explicit alias map for pairs the mechanical rule in 4.6c cannot reach — labels
     # differing by a real word, where only a human can say whether two firms are one.
-    # Each entry is a judgement that can be read and reversed.
-    ENTITY_ALIASES = {"BAY EFFICIENCY, LLC": "BAY EFFICIENCY"}
+    # Empty by design: the one entry it used to hold (BAY EFFICIENCY, LLC) differs only
+    # by a legal form, so 4.6c merges it without a judgement. Kept as the place a hand
+    # merge belongs if one of the 28 remaining groups is ever verified.
+    ENTITY_ALIASES = {}
     _present = {k: v for k, v in ENTITY_ALIASES.items()
                 if k in set(df["entityResponsible"].unique())}
     diag["aliases_applied"] = [
@@ -1224,12 +1226,11 @@ with tabs[1]:
         "(see the Responsible Entity tab), which is reason to check what it actually holds."
     )
 
-    r1, r2, r3, r4 = st.columns(4)
+    r1, r2, r3 = st.columns(3)
     r1.metric("Distinct entities", f"{diag.get('n_entities', 0):,}")
     r2.metric("Filings with punctuation stripped", f"{diag.get('n_punct_stripped', 0):,}")
     r3.metric("Legal-form merges", f"{diag.get('legal_merge_labels', 0):,}",
               f"into {diag.get('legal_merge_groups', 0)} names", delta_color="off")
-    r4.metric("Aliases merged", f"{len(diag.get('aliases_applied', []))}")
     st.caption(
         f"{diag.get('legal_merge_labels', 0)} labels differing only in punctuation and "
         f"legal form were merged into {diag.get('legal_merge_groups', 0)} names — "
@@ -1238,9 +1239,6 @@ with tabs[1]:
         "merges only when every differing token is a legal form, so no group is "
         "adjudicated by hand."
     )
-    for src_name, dst_name, n_src, n_dst in diag.get("aliases_applied", []):
-        st.caption(f"Separately, merged **{src_name}** ({n_src:,} filings) into "
-                   f"**{dst_name}** ({n_dst:,}) — a judgement call, not a rule.")
 
     c1, c2 = st.columns(2)
     with c1:
