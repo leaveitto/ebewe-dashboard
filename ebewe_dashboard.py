@@ -517,9 +517,9 @@ def load_and_clean(raw_bytes: bytes):
         r"^[^A-Z0-9]+|[^A-Z0-9]+$", "", regex=True)
     diag["n_punct_stripped"] = int((_before != df["entityResponsible"]).sum())
 
-    # Explicit alias map rather than a normalisation rule: a rule that merged on legal
-    # form alone would also merge distinct firms sharing a stem. Each entry is a
-    # judgement that can be read and reversed.
+    # Explicit alias map for pairs the mechanical rule in 4.6c cannot reach — labels
+    # differing by a real word, where only a human can say whether two firms are one.
+    # Each entry is a judgement that can be read and reversed.
     ENTITY_ALIASES = {"BAY EFFICIENCY, LLC": "BAY EFFICIENCY"}
     _present = {k: v for k, v in ENTITY_ALIASES.items()
                 if k in set(df["entityResponsible"].unique())}
@@ -1224,13 +1224,23 @@ with tabs[1]:
         "(see the Responsible Entity tab), which is reason to check what it actually holds."
     )
 
-    r1, r2, r3 = st.columns(3)
+    r1, r2, r3, r4 = st.columns(4)
     r1.metric("Distinct entities", f"{diag.get('n_entities', 0):,}")
     r2.metric("Filings with punctuation stripped", f"{diag.get('n_punct_stripped', 0):,}")
-    r3.metric("Aliases merged", f"{len(diag.get('aliases_applied', []))}")
+    r3.metric("Legal-form merges", f"{diag.get('legal_merge_labels', 0):,}",
+              f"into {diag.get('legal_merge_groups', 0)} names", delta_color="off")
+    r4.metric("Aliases merged", f"{len(diag.get('aliases_applied', []))}")
+    st.caption(
+        f"{diag.get('legal_merge_labels', 0)} labels differing only in punctuation and "
+        f"legal form were merged into {diag.get('legal_merge_groups', 0)} names — "
+        "3D INVESTMENTS, LLC into 3D INVESTMENTS, and so on. The canonical name is "
+        "whichever spelling carries the most filings. The rule is mechanical: a group "
+        "merges only when every differing token is a legal form, so no group is "
+        "adjudicated by hand."
+    )
     for src_name, dst_name, n_src, n_dst in diag.get("aliases_applied", []):
-        st.caption(f"Merged **{src_name}** ({n_src:,} filings) into **{dst_name}** "
-                   f"({n_dst:,}) — one firm previously counted as two agents.")
+        st.caption(f"Separately, merged **{src_name}** ({n_src:,} filings) into "
+                   f"**{dst_name}** ({n_dst:,}) — a judgement call, not a rule.")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -1251,8 +1261,11 @@ with tabs[1]:
                   f"{diag.get('dupe_labels', 0):,} labels, {diag.get('dupe_share', 0):.1f}% of filings",
                   delta_color="off")
         st.caption(
-            "Detected by normalising away punctuation and legal form. Reported, not merged — "
-            "a shared key shows two names are similar, not that two organisations are the same."
+            "What remains after the legal-form merge above. These groups share a "
+            "normalised key but differ by a real word — ANCHOR PACIFICA COMPANY against "
+            "ANCHOR PACIFICA MANAGEMENT COMPANY, or 2014 E 15TH ST, LLC against 2014 E "
+            "15TH ST ASSOCIATES, LLC. Reported, not merged: a shared key shows two names "
+            "are similar, and a company and its management arm are often separate filers."
         )
         if len(diag.get("dupe_detail", [])):
             with st.expander("Show candidate groups"):
