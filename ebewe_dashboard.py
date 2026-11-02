@@ -964,6 +964,35 @@ st.caption(
     "Every number below is recomputed live from the uploaded file. "
     "Nothing is hardcoded, so a data refresh flows straight through."
 )
+
+# ----------------------------------------------------------------------------
+# Audience and purpose
+# ----------------------------------------------------------------------------
+# Stated on the page, not left to the paper. A dashboard that does not name its
+# reader invites every reader to judge it against their own question.
+with st.container(border=True):
+    st.markdown(
+        "**Who this is for.** The LADBS program analyst who plans EBEWE enforcement "
+        "and outreach each program year, and the program manager who reports "
+        "compliance performance to the City."
+    )
+    st.markdown(
+        "**Decisions it supports**\n"
+        "- Whether a reported compliance change is real or an artefact of filing "
+        "behaviour — *Compliance Trend*\n"
+        "- Which segments need filing-completion outreach rather than energy "
+        "enforcement — *Coverage Tier*\n"
+        "- Which organisations account for concentrated non-compliance — "
+        "*Responsible Entity*\n"
+        "- Whether this data can support a predictive model, and what baseline it "
+        "must beat — *Correlations*"
+    )
+    st.caption(
+        "Every figure is reported twice — across all filings and across complete "
+        "filings only — so the reading that survives the separation is visible "
+        "before a decision is taken."
+    )
+    
 if filtered:
     st.warning(
         f"Filtered to program years {year_range[0]}–{year_range[1]}. Figures reflect the "
