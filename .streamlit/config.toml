@@ -1,0 +1,6 @@
+# Streamlit's default primaryColor is #FF4B4B, which leaked onto the year slider, the
+# phase radio and the active tab underline — a fifth accent in a two-hue palette. This
+# is CIVIC at a mid step: dark enough to read on the light ground, light enough to read
+# on the dark one, since config.toml cannot branch on theme.
+[theme]
+primaryColor = "#3C7FAF"
