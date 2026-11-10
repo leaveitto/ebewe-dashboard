@@ -98,14 +98,31 @@ else:
     # >= 0.06, light end 2.28:1, hue spread 4 degrees.
     TIER_SEQUENCE = ["#3A2A06", "#64490B", "#8C6610", "#B4871F", "#D0A338"]
 
-# Two roles, named for what they do rather than what colour they are. CONTEXT is every
-# series the reader is not being asked to look at; OCHRE is the one that carries the
-# finding. FOCUS_DEEP is one lightness step into the ramp, for a second related series
-# that belongs with the focal one rather than against it.
-CIVIC = CONTEXT                 # retained name; same token
-BLUE = CONTEXT
-RED = OCHRE
-DARK_BLUE = TIER_SEQUENCE[1] if IS_DARK else TIER_SEQUENCE[0]
+# Chart marks are one hue, separated by lightness only. Encoding two series as a
+# neutral against a gold made the neutral look like a second palette; here the darker
+# step simply reads as the one being pointed at. Each triple is validated: CVD
+# separation and normal-vision dE above the floor, and every step at or above 3:1
+# against its own surface, so a mark still reads without relying on its value label.
+if IS_DARK:
+    MARK_DEEP = "#F2E0B0"       # the series carrying the finding
+    MARK = "#D8AC45"            # a single series with nothing to contrast against
+    MARK_SOFT = "#A87C1A"       # context: the series the reader is not asked to look at
+else:
+    # #2E2206 cleared 3:1 at every step but sat at 12% lightness, which reads as
+    # charcoal rather than as a dark gold. These three are unmistakably one hue.
+    # The trade: the light step is 2.75:1, under the 3:1 floor, which the validator
+    # permits only with relief -- a visible value label or legend entry. Every chart
+    # using MARK_SOFT has one, so the condition is met rather than waived.
+    MARK_DEEP = "#564005"
+    MARK = "#8A6610"
+    MARK_SOFT = "#C0931F"
+
+# INK and SLATE are text, axes and reference lines only. They are never a mark; that
+# is what MARK_* is for, and mixing the two is how the neutral/gold clash started.
+CIVIC = CONTEXT
+BLUE = MARK
+RED = MARK_DEEP
+DARK_BLUE = MARK_DEEP
 
 # ----------------------------------------------------------------------------
 # Typography and page styling
@@ -336,9 +353,12 @@ if not IS_DARK:
           .stMain [data-testid="stExpander"] summary p { font-size: 0.75rem !important;
                    letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600;
                    color: #7A736A; }
-          .stMain [data-testid="stExpander"] details { border: 0; border-top: 1px dashed #DFDCD9;
-                   border-radius: 0; background: transparent; }
+          .stMain [data-testid="stExpander"] details { border: 0; border-radius: 0;
+                   background: transparent; }
+          .stMain [data-testid="stExpander"] summary { border-top: 1px dashed #DFDCD9;
+                   padding-top: 0.4rem; }
           .stMain [data-testid="stExpander"] summary { padding-left: 0; }
+          .stMain [data-testid="stExpander"] summary svg { width: 0.8rem; height: 0.8rem; }
           .kv { margin-bottom: 0.55rem; }
           .kv > div { display: flex; justify-content: space-between; align-items: baseline;
                    gap: 1rem; padding: 0.42rem 0; border-bottom: 1px solid #F2F0EE; }
@@ -1020,6 +1040,19 @@ def kv(rows):
     st.markdown(html + "</div>", unsafe_allow_html=True)
 
 
+def aside(caption_text, body, label="How this is computed"):
+    """A short caption and its disclosure on one line instead of two rows.
+
+    Each was taking a full 1200px row to carry a single line of text. Side by side
+    they occupy one row and the disclosure stops reading as a section break.
+    """
+    a, b = st.columns([2.6, 1], gap="medium")
+    with a:
+        st.caption(caption_text)
+    with b:
+        method(body, label)
+
+
 def method(body, label="How this is computed"):
     """Put the methodological passage behind a disclosure.
 
@@ -1375,12 +1408,12 @@ def render_home(source_label):
  complete filings {facts['complete_rate']:.2f} per cent are compliant.">
 <text x="2" y="14" font-size="10" fill="{SLATE}">ALL FILINGS · {facts['filings']:,}</text>
 <rect x="0" y="22" width="330" height="34" rx="6" fill="#EBE8E5"/>
-<rect x="0" y="22" width="{_w1:.0f}" height="34" rx="6" fill="{OCHRE}"/>
+<rect x="0" y="22" width="{_w1:.0f}" height="34" rx="6" fill="{MARK}"/>
 <text x="9" y="44" font-size="12" fill="#FFFFFF" font-weight="600">{_inc:.1f}%</text>
 <text x="{_w1 + 12:.0f}" y="44" font-size="11" fill="{INK}">incomplete · {facts['n_incomplete']:,}</text>
 <text x="2" y="84" font-size="10" fill="{SLATE}">COMPLETE FILINGS · {facts['n_complete']:,}</text>
 <rect x="0" y="92" width="330" height="34" rx="6" fill="#EBE8E5"/>
-<rect x="0" y="92" width="{_w2:.0f}" height="34" rx="6" fill="{CIVIC}"/>
+<rect x="0" y="92" width="{_w2:.0f}" height="34" rx="6" fill="{MARK_DEEP}"/>
 <text x="9" y="114" font-size="12" fill="#FFFFFF" font-weight="600">{facts['complete_rate']:.2f}% compliant</text>
 </svg>""",
                 unsafe_allow_html=True,
@@ -1497,8 +1530,8 @@ def render_final(source_label):
         ("Test", f"{res['n_test']:,} \u00b7 {res['test_buildings']:,} bldgs"),
         ("Test base rate", f"{res['base_rate'] * 100:.2f}%"),
     ], highlight=3)
-    st.caption(f"Target: **NOT COMPLIED**. Split **by building**, not by row.")
-    method(
+    aside(
+        f"Target: **NOT COMPLIED**. Split **by building**, not by row.",
         f"A random row split would leak the same building's history into the test fold. "
         f"The test fold holds {res['n_pos']:,} non-compliant filings.",
         "Why the split is by building")
@@ -1513,19 +1546,23 @@ def render_final(source_label):
         f"Predicting COMPLIED for every filing scores **{base['Accuracy'] * 100:.2f}%** "
         f"accuracy and catches **none** of the {int(base['Missed']):,} non-compliant "
         f"filings.")
-    method(
-        f"Gradient boosting reaches **{gb['Accuracy'] * 100:.2f}%** accuracy, barely "
-        f"higher, while catching **{int(gb['Caught']):,}** of them at "
-        f"**{gb['Precision'] * 100:.1f}%** precision. Accuracy cannot tell those two "
-        f"apart, which is why PR-AUC \u2014 **{base['PR-AUC']:.4f}** against "
-        f"**{gb['PR-AUC']:.4f}** \u2014 carries the comparison instead.",
-        "Why PR-AUC and not accuracy")
-    method(
-        f"Overfitting check, ROC-AUC on train against test: logistic regression "
-        f"{res['gap_m1']:+.4f}, gradient boosting {res['gap_m2']:+.4f}. The boosting "
-        f"hyperparameters were chosen on this gap rather than on the test score, since "
-        f"choosing on the test score is itself a form of leakage.",
-        "Overfitting check")
+    # Two disclosures stacked took two full-width rows to show two labels.
+    _m1, _m2 = st.columns(2, gap="medium")
+    with _m1:
+        method(
+            f"Gradient boosting reaches **{gb['Accuracy'] * 100:.2f}%** accuracy, barely "
+            f"higher, while catching **{int(gb['Caught']):,}** of them at "
+            f"**{gb['Precision'] * 100:.1f}%** precision. Accuracy cannot tell those two "
+            f"apart, which is why PR-AUC \u2014 **{base['PR-AUC']:.4f}** against "
+            f"**{gb['PR-AUC']:.4f}** \u2014 carries the comparison instead.",
+            "Why PR-AUC and not accuracy")
+    with _m2:
+        method(
+            f"ROC-AUC on train against test: logistic regression {res['gap_m1']:+.4f}, "
+            f"gradient boosting {res['gap_m2']:+.4f}. The boosting hyperparameters were "
+            f"chosen on this gap rather than on the test score, since choosing on the "
+            f"test score is itself a form of leakage.",
+            "Overfitting check")
 
     section("02", "What the model uses")
     # Chart and reading sit side by side: the claim is about the chart, and a reader
@@ -1535,7 +1572,7 @@ def render_final(source_label):
     fig = go.Figure(go.Bar(
         x=imp["AUC drop"], y=imp["Feature"], orientation="h",
         error_x=dict(type="data", array=imp["SD"], color=SLATE, thickness=1, width=3),
-        marker_color=CIVIC,
+        marker_color=MARK,
         text=[("<0.001" if v < 0.001 else f"{v:.3f}") for v in imp["AUC drop"]],
         textposition="outside", cliponaxis=False))
     fig.update_layout(height=430, xaxis_title="ROC-AUC lost when the column is shuffled",
@@ -1667,7 +1704,7 @@ if phase == PHASE_PRELIM:
             color=_m["Column"].isin(_com),
             # Colour marks membership in the co-missing set, not a missingness threshold.
             # The six identical masks are the finding; every other column is context.
-            color_discrete_map={True: CIVIC, False: SLATE},
+            color_discrete_map={True: MARK_DEEP, False: MARK_SOFT},
             text="Missing %",
         )
         fig.update_layout(height=650, showlegend=False, xaxis_title="Missing (%)")
@@ -1697,7 +1734,7 @@ if phase == PHASE_PRELIM:
             x=inc_by_year.index, y=inc_by_year.values, markers=True,
             labels={"x": "Program Year", "y": "% Incomplete"},
         )
-        fig.update_traces(line_color=RED)
+        fig.update_traces(line_color=MARK)
         fig.update_layout(height=350, title="Share of filings that are structurally incomplete")
         with _ev:
             chart(fig)
@@ -1771,8 +1808,8 @@ if phase == PHASE_PRELIM:
             st.markdown("**Values that cannot be company names**")
             if len(diag.get("nonname", [])):
                 st.dataframe(diag["nonname"], width="stretch", hide_index=True)
-                st.caption(f"{diag['nonname_share']:.2f}% of named-entity filings. Not repaired.")
-                method(
+                aside(
+                    f"{diag['nonname_share']:.2f}% of named-entity filings. Not repaired.",
                     "The true entity is unrecoverable, and assigning these to UNKNOWN "
                     "would merge them with the incomplete filings, which are almost never "
                     "compliant. A code groups as reliably as a name; only readability is "
@@ -1784,8 +1821,8 @@ if phase == PHASE_PRELIM:
             st.metric("Candidate groups", f"{diag.get('dupe_groups', 0):,}",
                       f"{diag.get('dupe_labels', 0):,} labels, {diag.get('dupe_share', 0):.1f}% of filings",
                       delta_color="off")
-            st.caption("What remains after the legal-form merge. Reported, not merged.")
-            method(
+            aside(
+                "What remains after the legal-form merge. Reported, not merged.",
                 "These groups share a normalised key but differ by a real word \u2014 "
                 "ANCHOR PACIFICA COMPANY against ANCHOR PACIFICA MANAGEMENT COMPANY, or "
                 "2014 E 15TH ST, LLC against 2014 E 15TH ST ASSOCIATES, LLC. A shared key "
@@ -1803,7 +1840,7 @@ if phase == PHASE_PRELIM:
             _ev, _nt = evidence(ratio=1.55)
             fig = px.bar(av.sort_values("Present %"), x="Present %", y="Field", orientation="h",
                          text="Present %")
-            fig.update_traces(marker_color=BLUE, texttemplate="%{text:.1f}%",
+            fig.update_traces(marker_color=MARK, texttemplate="%{text:.1f}%",
                               textposition="outside", cliponaxis=False)
             fig.update_layout(height=420, xaxis_range=[0, 100], yaxis_title="")
             with _ev:
@@ -1861,7 +1898,7 @@ if phase == PHASE_PRELIM:
         if len(vol):
             fig = px.bar(x=vol.values, y=vol.index, orientation="h",
                          labels={"x": "Number of Filings", "y": ""}, text=vol.values)
-            fig.update_traces(marker_color=BLUE, textposition="outside",
+            fig.update_traces(marker_color=MARK, textposition="outside",
                               texttemplate="%{text:,}", cliponaxis=False)
             fig.update_layout(height=max(380, 32 * len(vol)),
                               yaxis={"autorange": "reversed"})
@@ -1917,8 +1954,8 @@ if phase == PHASE_PRELIM:
         c2 = _cc
         fig = go.Figure()
         # Mean and median are two estimators, not a good one and a bad one.
-        fig.add_bar(name="Mean", x=central["Metric"], y=central["Mean"], marker_color=SLATE)
-        fig.add_bar(name="Median", x=central["Metric"], y=central["Median"], marker_color=BLUE)
+        fig.add_bar(name="Mean", x=central["Metric"], y=central["Mean"], marker_color=MARK_SOFT)
+        fig.add_bar(name="Median", x=central["Metric"], y=central["Median"], marker_color=MARK_DEEP)
         fig.update_layout(barmode="group", height=340,
                           title="Gap between mean and median")
         c2.plotly_chart(fig, width="stretch")
@@ -1964,7 +2001,7 @@ if phase == PHASE_PRELIM:
             # One series, so the hue encodes nothing — the bar length already carries the
             # value. GREEN previously coloured this chart, which gave that token a second
             # meaning on top of the one it was declared for.
-            fig.update_traces(marker_color=CIVIC, textposition="outside", cliponaxis=False)
+            fig.update_traces(marker_color=MARK, textposition="outside", cliponaxis=False)
             fig.update_layout(height=max(380, 30 * len(med)), yaxis={"autorange": "reversed"})
             _pad_axis(fig, med.values)
             with _ev:
@@ -2023,9 +2060,9 @@ if phase == PHASE_PRELIM:
         with c1:
             fig = go.Figure()
             fig.add_histogram(x=eui.loc[~eui["siteEuiIsOutlier"], "siteEui"], nbinsx=60,
-                              name="Within IQR fences", marker_color=BLUE)
+                              name="Within IQR fences", marker_color=MARK_SOFT)
             fig.add_histogram(x=eui.loc[eui["siteEuiIsOutlier"], "siteEui"], nbinsx=30,
-                              name="Flagged outlier (not removed)", marker_color=RED)
+                              name="Flagged outlier (not removed)", marker_color=MARK_DEEP)
             # Median and mean sit ~11 units apart on a 2,000-unit axis, so their labels
             # overlap into illegible text if both are placed at the default position.
             fig.add_vline(x=eui["siteEui"].median(), line_dash="dash", line_color=INK)
@@ -2045,7 +2082,7 @@ if phase == PHASE_PRELIM:
             chart(fig)
         with c2:
             fig = px.histogram(x=np.log1p(eui["siteEui"].clip(lower=0)), nbins=60)
-            fig.update_traces(marker_color=DARK_BLUE)
+            fig.update_traces(marker_color=MARK)
             fig.update_layout(height=420, title="Log-transformed (viewing aid only)",
                               xaxis_title="log(1 + Site EUI)", yaxis_title="Buildings")
             chart(fig)
@@ -2059,7 +2096,7 @@ if phase == PHASE_PRELIM:
         comp_rate = (_type_stats[_type_stats["count"] >= MIN_TYPE_FILINGS]["mean"]
                      .sort_values(ascending=False))
         if len(comp_rate):
-            colors = [RED if v < 80 else BLUE for v in comp_rate.values]
+            colors = [MARK_DEEP if v < 80 else MARK_SOFT for v in comp_rate.values]
             fig = go.Figure(go.Bar(x=comp_rate.values, y=comp_rate.index, orientation="h",
                                    marker_color=colors, text=comp_rate.round(1),
                                    texttemplate="%{text}%", textposition="outside",
@@ -2072,7 +2109,7 @@ if phase == PHASE_PRELIM:
             fig.update_layout(height=max(380, 30 * len(comp_rate)),
                               xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                               xaxis_range=[0, 118],   # 18% headroom, matching _pad_axis
-                              title="Below the 80% reference line is marked in ochre")
+                              title="Below the 80% reference line is marked darker")
             with _ev:
                 chart(fig)
         with _nt:
@@ -2082,11 +2119,9 @@ if phase == PHASE_PRELIM:
                     "deadlines and fees, not a compliance-rate goal."
                 )
                 if len(_small):
-                    st.caption(
-                        f"{len(_small)} type(s) under {MIN_TYPE_FILINGS} filings excluded."
-                    )
-                method(
-                    "A fixed line is used rather than the citywide average so a bar's "
+                    aside(
+                        f"{len(_small)} type(s) under {MIN_TYPE_FILINGS} filings excluded.",
+                        "A fixed line is used rather than the citywide average so a bar's "
                     "colour changes only when that property type's own rate changes. "
                     f"Types with fewer than {MIN_TYPE_FILINGS} complete filings are "
                     "excluded because a rate computed on a handful of filings swings "
@@ -2101,7 +2136,7 @@ if phase == PHASE_PRELIM:
             fig = px.bar(x=AGE_ORDER, y=age_eui.values,
                          labels={"x": "Building Age Bucket", "y": "Median Site EUI (kBtu/ft²)"},
                          text=age_eui.round(1))
-            fig.update_traces(marker_color=BLUE, textposition="outside", cliponaxis=False)
+            fig.update_traces(marker_color=MARK, textposition="outside", cliponaxis=False)
             fig.update_layout(height=420)
             _pad_axis(fig, age_eui.values, axis="y", pad=0.12)
             _ev, _nt = evidence(ratio=2.3)
@@ -2127,15 +2162,14 @@ if phase == PHASE_PRELIM:
                          labels={"x": f"Total CO2e, {_yr_lo}\u2013{_yr_hi} (Metric Tons)",
                                  "y": "Postal Code"})
             # Single series again; no encoding, so no second hue.
-            fig.update_traces(marker_color=CIVIC)
+            fig.update_traces(marker_color=MARK)
             fig.update_layout(height=560, yaxis={"autorange": "reversed", "type": "category"})
             _ev, _nt = evidence(ratio=1.8)
             with _ev:
                 chart(fig)
             with _nt:
-                st.caption(
-                    f"Total, not average \u2014 retrofit targeting follows total carbon.")
-                method(
+                aside(
+                    f"Total, not average \u2014 retrofit targeting follows total carbon.",
                     f"The bars sum every filing from {_yr_lo} to {_yr_hi} \u2014 "
                     f"{_n_bldg:,} buildings at {_fpb:.2f} filings each \u2014 so a postal "
                     f"code with more years of coverage accumulates more. The top ranks are "
@@ -2183,14 +2217,14 @@ else:
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(go.Scatter(x=yearly_overall.index, y=yearly_overall.values,
                                  mode="lines+markers", name="Overall % Compliant",
-                                 line={"color": BLUE, "width": 3}), secondary_y=False)
+                                 line={"color": MARK_SOFT, "width": 3}), secondary_y=False)
         fig.add_trace(go.Scatter(x=yearly_complete.index, y=yearly_complete.values,
                                  mode="lines+markers", name="% Compliant (complete filings only)",
-                                 line={"color": DARK_BLUE, "width": 3},
+                                 line={"color": MARK_DEEP, "width": 3},
                                  marker_symbol="triangle-up"), secondary_y=False)
         fig.add_trace(go.Scatter(x=yearly_incomplete.index, y=yearly_incomplete.values,
                                  mode="lines+markers", name="% Incomplete Filing",
-                                 line={"color": OCHRE, "width": 2, "dash": "dash"},
+                                 line={"color": MARK, "width": 2, "dash": "dash"},
                                  marker_symbol="square"), secondary_y=True)
         fig.update_yaxes(title_text="% Compliant", secondary_y=False)
         fig.update_yaxes(title_text="% Incomplete Filing", secondary_y=True,
@@ -2249,9 +2283,9 @@ else:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=_bal.index, y=_bal["Complete %"], mode="lines+markers",
                                      name="Complete filings only",
-                                     line={"color": DARK_BLUE, "width": 3}))
+                                     line={"color": MARK_DEEP, "width": 3}))
             fig.add_trace(go.Scatter(x=_bal.index, y=_bal["Overall %"], mode="lines+markers",
-                                     name="Overall", line={"color": BLUE, "width": 2, "dash": "dot"}))
+                                     name="Overall", line={"color": MARK_SOFT, "width": 2, "dash": "dot"}))
             fig.update_layout(height=420, xaxis_title="Program Year", yaxis_title="% Compliant",
                               title=f"{len(_panel):,} buildings held constant, {_yrs[0]}–{_yrs[-1]}",
                               legend={"orientation": "h", "y": -0.2})
@@ -2312,13 +2346,17 @@ else:
         section("01", "Coverage tier predicts filing, not compliance",
                 "The only structural field populated on every record, incomplete filings "
                 "included.")
-        method(
-            "`ladbsBuildingCategory` is the ordinance's own size and ownership "
-            "segmentation. Unlike "
-            f"{', '.join(diag.get('comissing_fields', STRUCTURAL_COLS))} \u2014 all "
-            "missing on the structurally incomplete filings \u2014 it is present on every "
-            "row, which is why it can answer which buildings file incompletely at all.",
-            "Why this field and not another")
+        # Both disclosures for this section share one row rather than taking two.
+        _d1, _d2 = st.columns(2, gap="medium")
+        with _d1:
+            method(
+                "`ladbsBuildingCategory` is the ordinance's own size and ownership "
+                "segmentation. Unlike "
+                f"{', '.join(diag.get('comissing_fields', STRUCTURAL_COLS))} \u2014 all "
+                "missing on the structurally incomplete filings \u2014 it is present on "
+                "every row, which is why it can answer which buildings file incompletely "
+                "at all.",
+                "Why this field and not another")
         # The ordinance floor is 20,000 sq ft for private buildings and 7,500 for city-owned
         # ones, so the tiers below 20,000 exist only because city-owned buildings are covered
         # lower. Checked against the data rather than asserted from the ordinance text.
@@ -2330,21 +2368,23 @@ else:
         if _small:
             _priv = int(_own.loc[_small, False].sum())
             _city = int(_own.loc[_small, True].sum())
-            if _priv == 0:
-                method(
-                    f"The ordinance covers privately owned buildings at 20,000 sq ft and "
-                    f"city-owned buildings at 7,500, so the tiers below 20,000 sq ft exist "
-                    f"only because city ownership lowers the floor. That holds here: "
-                    f"{', '.join(_small)} together hold {_city:,} filings and not one is "
-                    f"privately owned. A compliance gap at the small end of the ranking "
-                    f"below is therefore an ownership difference as well as a size one.",
-                    "Why the small tiers are city-owned")
-            else:
-                st.caption(
-                    f"{_priv:,} privately owned filing(s) sit below the 20,000 sq ft "
-                    f"floor, alongside {_city:,} city-owned \u2014 size and ownership are "
-                    f"not fully entangled at the small end here."
-                )
+            with _d2:
+                if _priv == 0:
+                    method(
+                        f"The ordinance covers privately owned buildings at 20,000 sq ft "
+                        f"and city-owned buildings at 7,500, so the tiers below 20,000 sq "
+                        f"ft exist only because city ownership lowers the floor. That "
+                        f"holds here: {', '.join(_small)} together hold {_city:,} filings "
+                        f"and not one is privately owned. A compliance gap at the small "
+                        f"end of the ranking below is therefore an ownership difference "
+                        f"as well as a size one.",
+                        "Why the small tiers are city-owned")
+                else:
+                    st.caption(
+                        f"{_priv:,} privately owned filing(s) sit below the 20,000 sq ft "
+                        f"floor, alongside {_city:,} city-owned \u2014 size and ownership "
+                        f"are not fully entangled at the small end here."
+                    )
 
         _bands = (dff.groupby("sizeBand")["isIncompleteFiling"].size()
                   .sort_values(ascending=False).index.tolist())
@@ -2370,10 +2410,10 @@ else:
             with c1:
                 fig = go.Figure()
                 fig.add_bar(y=_bands, x=_all.values, orientation="h", name="All filings",
-                            marker_color=BLUE, text=_all.round(1), textposition="outside",
+                            marker_color=MARK_SOFT, text=_all.round(1), textposition="outside",
                             cliponaxis=False)
                 fig.add_bar(y=_bands, x=_cmp.values, orientation="h",
-                            name="Complete filings only", marker_color=OCHRE,
+                            name="Complete filings only", marker_color=MARK_DEEP,
                             text=_cmp.round(1), textposition="outside", cliponaxis=False)
                 fig.update_layout(height=430, barmode="group", xaxis_range=[0, 128],
                                   xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
@@ -2382,7 +2422,7 @@ else:
                 chart(fig)
             with c2:
                 fig = go.Figure(go.Bar(y=_bands, x=_inc.values, orientation="h",
-                                       marker_color=RED, text=_inc.round(1),
+                                       marker_color=MARK, text=_inc.round(1),
                                        textposition="outside", cliponaxis=False))
                 # Default annotation position lands on the top bar's value label.
                 fig.add_vline(x=dff["isIncompleteFiling"].mean() * 100, line_dash="dash",
@@ -2513,11 +2553,9 @@ else:
                 # shown as one, with the warning about comparability kept as the lead.
                 _ev, _nt = evidence(ratio=3.1)
                 with _nt:
-                    st.caption(
+                    aside(
                         "Different denominators \u2014 not comparable as ratios. Both "
-                        "bases are stated."
-                    )
-                    method(
+                        "bases are stated.",
                         "Agents are ranked across every complete filing; property types "
                         "across the current sidebar selection. Incomplete filings are "
                         "excluded throughout, since they carry UNKNOWN and are almost "
@@ -2553,7 +2591,7 @@ else:
             _show = pd.concat([_big.head(10), _big.tail(10)]).drop_duplicates()
             fig = go.Figure(go.Bar(
                 x=_show["compliance"], y=_show.index, orientation="h",
-                marker_color=[RED if v < _base else BLUE for v in _show["compliance"]],
+                marker_color=[MARK_DEEP if v < _base else MARK_SOFT for v in _show["compliance"]],
                 text=_show["compliance"], texttemplate="%{text}%",
                 textposition="outside", cliponaxis=False,
                 customdata=_show["filings"],
@@ -2660,10 +2698,9 @@ else:
                     # each implies, and the set each selects — and serialising it into prose
                     # buried the only thing that matters: the set does not change. As a table
                     # the constancy is visible in one pass down the last column.
-                    st.caption(
+                    aside(
                         f"Driver rule: {MIN_OPERATOR_FILINGS}+ filings and at least "
-                        f"{_margin:.1f} points below the {_base:.1f}% baseline.")
-                    method(
+                        f"{_margin:.1f} points below the {_base:.1f}% baseline.",
                         f"The margin is {DEFICIT_SHARE:.0%} of the category's own "
                         f"{_deficit:.1f}-point deficit \u2014 a judgement, so its effect is "
                         f"shown in full below. If the selected set moved across this range "
@@ -2889,7 +2926,7 @@ else:
                        .sort_values(ascending=False).round(3))
         fig = px.bar(x=target_corr.values, y=target_corr.index, orientation="h",
                      labels={"x": "r with isCompliant", "y": ""}, text=target_corr.values)
-        fig.update_traces(marker_color=BLUE, textposition="outside", cliponaxis=False)
+        fig.update_traces(marker_color=MARK, textposition="outside", cliponaxis=False)
         fig.update_layout(height=380, xaxis_range=[-0.1, 0.1],
                           yaxis={"autorange": "reversed"})
         chart(fig)
