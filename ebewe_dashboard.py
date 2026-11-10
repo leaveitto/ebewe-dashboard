@@ -125,6 +125,12 @@ st.markdown(
          Inheriting instead means the browser repaints the moment the toggle is used, with
          no rerun and nothing to keep in sync. Every surface below is derived from the
          inherited text colour with color-mix, so it tracks whichever theme is active. */
+      /* Ground. Streamlit's default white is colder than the palette and makes the
+         ochre read as alarm rather than as the second encoding hue. A warm off-white
+         with a slightly deeper sidebar gives the page a paper ground and lets the
+         cards and tables sit on it without borders doing all the work. Light mode
+         only: the dark tokens above already handle the other case, and pinning a
+         colour here is what broke dark mode in an earlier version. */
       html, body, .stApp, .stMarkdown, .stCaption, .stDataFrame,
       [data-testid="stMetricValue"], [data-testid="stMetricLabel"],
       .stTabs [data-baseweb="tab"], [data-testid="stWidgetLabel"] {
@@ -209,6 +215,43 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# ----------------------------------------------------------------------------
+# Ground — light mode only
+# ----------------------------------------------------------------------------
+# Streamlit's default white is colder than this palette, which makes OCHRE read as
+# alarm rather than as the second encoding hue. A warm off-white with a slightly
+# deeper sidebar gives the page a paper ground, and lets metric tiles and tables sit
+# on it as surfaces rather than as floating text. Applied only in light mode: the
+# dark tokens above already handle the other case, and pinning colours unconditionally
+# is what broke dark mode in an earlier version.
+#
+# Same no-blank-lines rule as the sheet above — a blank line followed by indented text
+# is markdown's code-block syntax and would close the <style> element early.
+if not IS_DARK:
+    st.markdown(
+        """
+        <style>
+          .stApp { background-color: #FAF8F5; }
+          section[data-testid="stSidebar"] { background-color: #F2EEE8;
+            border-right: 1px solid #E4DED4; }
+          /* Metric tiles become surfaces. Four bare numbers in a row read as a list;
+             four tiles read as a panel, which is what a KPI row is. */
+          [data-testid="stMetric"] { background: #FFFFFF; border: 1px solid #E7E1D7;
+            border-radius: 10px; padding: 0.7rem 0.9rem 0.8rem; }
+          [data-testid="stMetricLabel"] { opacity: 0.72; }
+          /* Bordered containers pick up the same surface so cards and tiles agree. */
+          [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"]
+            { border-radius: 10px; }
+          /* Tables: lighter rules, warmer header. The default grey header competes with
+             the data for attention. */
+          [data-testid="stDataFrame"] { border-radius: 8px; }
+          /* Dividers recede; they separate sections rather than announcing themselves. */
+          hr { border-color: #E7E1D7 !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # Chart defaults, so every figure inherits the same face and axis weight rather
 # than each one re-specifying it.
@@ -1034,9 +1077,9 @@ def _headline_facts(_df, cache_key):
     complete = _df[~_df["isIncompleteFiling"]]
     out["complete_rate"] = float(complete["isCompliant"].mean() * 100)
     out["n_complete"] = len(complete)
-    out["n_noncompliant_complete"] = int((~complete["isCompliant"]).sum())
+    out["n_noncompliant_complete"] = int((complete["isCompliant"] == 0).sum())
     inc = _df[_df["isIncompleteFiling"]]
-    out["incomplete_notcomplied"] = float((~inc["isCompliant"]).mean() * 100)
+    out["incomplete_notcomplied"] = float((inc["isCompliant"] == 0).mean() * 100)
 
     by_year_all = _df.groupby("programYear")["isCompliant"].mean() * 100
     by_year_complete = complete.groupby("programYear")["isCompliant"].mean() * 100
@@ -1046,8 +1089,11 @@ def _headline_facts(_df, cache_key):
     out["attributable"] = (100 * (1 - out["fall_complete"] / out["fall_all"])
                            if out["fall_all"] else float("nan"))
 
-    tier_all = _df.groupby("ladbsBuildingCategory")["isCompliant"].mean() * 100
-    tier_complete = complete.groupby("ladbsBuildingCategory")["isCompliant"].mean() * 100
+    # sizeBand, not ladbsBuildingCategory. The tab and the paper both report the size
+    # spread; the raw category splits city-owned tiers out separately and gives 30.2
+    # rather than 16.7, so using it here would contradict the page it summarises.
+    tier_all = _df.groupby("sizeBand")["isCompliant"].mean() * 100
+    tier_complete = complete.groupby("sizeBand")["isCompliant"].mean() * 100
     out["tier_spread_all"] = float(tier_all.max() - tier_all.min())
     out["tier_spread_complete"] = float(tier_complete.max() - tier_complete.min())
 
@@ -1134,7 +1180,8 @@ def render_home(source_label):
                 f"filing completeness is held constant\n"
                 f"- Across {facts['n_big_entities']} organisations the spread is "
                 f"**{facts['entity_spread']:.1f} points**, against "
-                f"**{facts['type_spread']:.1f}** across property types"
+                f"**{facts['type_spread']:.1f}** across all property types with "
+                f"{MIN_TYPE_FILINGS}+ complete filings"
             )
             st.caption("Tabs: Compliance Trend · Coverage Tier · Responsible Entity · Correlations")
             st.button("Open Midterm", key="go_mid", width="stretch",
