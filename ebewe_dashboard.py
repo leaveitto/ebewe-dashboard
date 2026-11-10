@@ -301,6 +301,15 @@ if not IS_DARK:
           .statband .bcell b { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.025em; }
           .pullq { background: #FDF4E0; border-left: 4px solid #B07D0A;
             border-radius: 0 14px 14px 0; padding: 0.9rem 1.2rem; }
+          .srule { display: flex; gap: 0.85rem; align-items: baseline;
+                   border-top: 2px solid #1F2329; padding-top: 0.55rem;
+                   margin: 2.1rem 0 1.1rem; }
+          .srule .snum { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+                   color: #B07D0A; font-variant-numeric: tabular-nums; }
+          .srule h3 { margin: 0 !important; font-size: 1.08rem !important;
+                   font-weight: 700; letter-spacing: -0.015em; padding: 0 !important; }
+          .srule p { margin: 0.2rem 0 0; font-size: 0.84rem; color: #6B7280;
+                   max-width: 62ch; }
           .pullq > b { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
           .pullq p b { font-weight: 700; color: #1F2329; }
           .pullq p { margin: 0; font-size: 0.88rem; color: #4B5563; }
@@ -931,6 +940,35 @@ def _inline_md(text):
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
 
 
+def section(num, title, kicker=None):
+    """A numbered rule between blocks.
+
+    Tabs are a flat device: every tab opens the same way, so a long tab reads as one
+    undifferentiated column. The number gives the eye somewhere to land and tells the
+    reader how far through the argument they are.
+    """
+    k = f"<p>{_inline_md(kicker)}</p>" if kicker else ""
+    st.markdown(
+        f"<div class='srule'><span class='snum'>{num}</span>"
+        f"<div><h3>{title}</h3>{k}</div></div>",
+        unsafe_allow_html=True)
+
+
+def evidence(ratio=1.7, note_first=False):
+    """Return (evidence_column, note_column) for a figure and its reading.
+
+    A caption under a chart is read after the reader has already formed an impression
+    of it. Beside the chart, the sentence and the shape it describes are in view at
+    once. note_first flips the order so consecutive blocks do not read as a column
+    with a permanent sidebar.
+    """
+    if note_first:
+        a, b = st.columns([1, ratio], gap="large")
+        return b, a
+    a, b = st.columns([ratio, 1], gap="large")
+    return a, b
+
+
 def pull(headline, body):
     """The sentence that changes how the numbers above it should be read."""
     st.markdown(
@@ -1297,13 +1335,11 @@ def render_home(source_label):
          "and the program manager who reports compliance performance to the City.")
 
     st.divider()
-    st.subheader("The three phases")
-    st.caption(
-        "Each phase answers a question the next one depends on. The figures below are "
-        "computed from the loaded file, not restated from an earlier run."
-    )
+    section("\u2192", "The three phases",
+            "Each phase answers a question the next one depends on. The figures below are "
+            "computed from the loaded file, not restated from an earlier run.")
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = st.columns(3, gap="large")
     with c1:
         with card():
             st.markdown("#### Preliminary — descriptive")
@@ -1416,7 +1452,7 @@ def render_final(source_label):
         f"fold. The test fold holds {res['n_pos']:,} non-compliant filings."
     )
 
-    st.subheader("Three models against the baseline")
+    section("01", "Three models against the baseline")
     st.dataframe(
         comp.style.format({c: "{:.4f}" for c in
                            ["Accuracy", "Precision", "Recall", "F1", "ROC-AUC", "PR-AUC"]}),
@@ -1440,8 +1476,7 @@ def render_final(source_label):
         f"choosing on the test score is itself a form of leakage."
     )
 
-    st.divider()
-    st.subheader("What the model uses")
+    section("02", "What the model uses")
     # Chart and reading sit side by side: the claim is about the chart, and a reader
     # who has to scroll past the bars to reach it loses the comparison.
     gl, gr = st.columns([1.35, 1], gap="large")
@@ -1472,8 +1507,7 @@ def render_final(source_label):
             f"misses most of what the full model catches."
         )
 
-    st.divider()
-    st.subheader("The review list")
+    section("03", "The review list")
     st.caption(
         "The model is used as a ranking rather than a verdict. The analyst's question is "
         "not whether one filing is non-compliant but which filings to review with the "
@@ -1501,39 +1535,6 @@ def render_final(source_label):
         st.dataframe(res["ranked"].head(cap).style.format({"risk": "{:.3f}"}),
                      width="stretch", hide_index=True, height=430)
         st.caption("Ranked by predicted risk on the held-out fold.")
-
-    st.divider()
-    st.subheader("What this does not settle")
-    # Five caveats read as a wall in one column. Two columns of cards let the reader
-    # take them one at a time without losing the sense that the list is finite.
-    _lim_left = (
-        f"- **Cost-benefit ranking is out of reach.** No penalty, enforcement or retrofit "
-        f"cost appears in the published columns, so the model can rank by risk but not by "
-        f"expected value. Importing external cost figures would import assumptions with a "
-        f"weaker footing than anything else here.\n"
-        f"- **Timing cannot be assessed.** The data records a program year but no filing "
-        f"date, so nothing here says when in a cycle an intervention would land.\n"
-        f"- **Exempt buildings are indistinguishable from delinquent ones.** The ordinance "
-        f"exempts unoccupied and mid-demolition buildings; neither is recorded. That places "
-        f"a ceiling on recall no model can cross."
-    )
-    _lim_right = (
-        f"- **Program year carries a confound.** It is the second most important feature, "
-        f"but it absorbs both the policy regime — including the 2019–2021 deadline "
-        f"suspension — and the roster growth as the ordinance phased in. It is not a causal "
-        f"finding.\n"
-        f"- **{res['unseen_entity_share'] * 100:.1f}% of test filings** name an organisation "
-        f"absent from the training data; those are scored at the base rate, so the model has "
-        f"no entity signal for roughly one filing in "
-        f"{max(1, round(1 / max(res['unseen_entity_share'], 1e-9))):.0f}."
-    )
-    ll, lr = st.columns(2, gap="large")
-    with ll:
-        with card():
-            st.markdown(_lim_left)
-    with lr:
-        with card():
-            st.markdown(_lim_right)
 
 
 # ----------------------------------------------------------------------------
@@ -1608,11 +1609,11 @@ if phase == PHASE_PRELIM:
     ])
 
     with tabs[0]:
-        st.subheader("Missingness by column")
-        st.caption(
-            "Computed after the `Not Available` placeholder is standardized to a true null "
-            "(Section 4.2). Left as-is, pandas would treat that string as a valid category."
-        )
+        section("01", "Missingness by column",
+                "Computed after the `Not Available` placeholder is standardized to a true "
+                "null (Section 4.2). Left as-is, pandas would treat that string as a valid "
+                "category.")
+        _ev, _nt = evidence(ratio=1.9)
         miss = diag["missing_report"].reset_index(names="Column")
         _com = diag.get("comissing_fields", [])
         _m = miss.sort_values("Missing %")
@@ -1628,16 +1629,19 @@ if phase == PHASE_PRELIM:
         fig.update_layout(height=650, showlegend=False, xaxis_title="Missing (%)")
         fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
         _pad_axis(fig, miss["Missing %"])
-        chart(fig)
-        st.info(
-            f"{len(_com)} fields share an identical missing mask — not merely a similar rate. "
-            f"They are null on exactly the same {diag['n_incomplete']:,} records, with no "
-            f"exceptions in either direction: {', '.join('`%s`' % c for c in _com)}. "
-            f"That is the pattern captured as `isIncompleteFiling`.",
-        )
+        with _ev:
+            chart(fig)
+        with _nt:
+            st.info(
+                f"**{len(_com)} fields share an identical missing mask** \u2014 not merely a "
+                f"similar rate. They are null on exactly the same "
+                f"{diag['n_incomplete']:,} records, with no exceptions in either "
+                f"direction: {', '.join('`%s`' % c for c in _com)}. That is the pattern "
+                f"captured as `isIncompleteFiling`.",
+            )
 
-        st.divider()
-        st.subheader("Incomplete-filing rate over time")
+        section("02", "Incomplete-filing rate over time")
+        _ev, _nt = evidence(ratio=1.9, note_first=True)
         inc_by_year = df.groupby("programYear")["isIncompleteFiling"].mean().mul(100).round(1)
         fig = px.line(
             x=inc_by_year.index, y=inc_by_year.values, markers=True,
@@ -1645,23 +1649,31 @@ if phase == PHASE_PRELIM:
         )
         fig.update_traces(line_color=RED)
         fig.update_layout(height=350, title="Share of filings that are structurally incomplete")
-        chart(fig)
-        st.caption(
-            "Checked by year rather than once overall: a rising incomplete-filing rate makes a "
-            "naive compliance trend look like buildings are performing worse when they may not be."
-        )
+        with _ev:
+            chart(fig)
+        with _nt:
+            with card():
+                st.markdown(
+                    "**Why by year.** A rising incomplete-filing rate makes a naive "
+                    "compliance trend look like buildings are performing worse when "
+                    "they may not be. Checked once overall, that movement is invisible."
+                )
 
-        st.divider()
-        st.subheader("Plausibility bounding (5.2)")
-        st.caption(
-            "Data-entry errors nulled at both ends — a 6.7-million kBtu/ft² reading is not an "
-            "unusual building. Shown full width so the counts stay readable."
-        )
-        st.dataframe(diag["plaus_report"], width="stretch", hide_index=True)
-
-        st.subheader("IQR outlier flags (5.3)")
-        st.caption("Flagged, never removed. These are genuinely unusual but real buildings.")
-        st.dataframe(diag["outlier_report"], width="stretch", hide_index=True)
+        # Two narrow reports answering the same question — what was altered, what was
+        # only marked — belong beside each other, not one under the other.
+        section("03", "What was corrected, and what was only flagged")
+        _pb, _ob = st.columns(2, gap="large")
+        with _pb:
+            st.markdown("**Plausibility bounding (5.2)**")
+            st.caption(
+                "Data-entry errors nulled at both ends \u2014 a 6.7-million kBtu/ft\u00b2 "
+                "reading is not an unusual building."
+            )
+            st.dataframe(diag["plaus_report"], width="stretch", hide_index=True)
+        with _ob:
+            st.markdown("**IQR outlier flags (5.3)**")
+            st.caption("Flagged, never removed. These are genuinely unusual but real buildings.")
+            st.dataframe(diag["outlier_report"], width="stretch", hide_index=True)
 
         if diag.get("n_locale_property_types"):
             st.markdown("**French-locale property types**")
@@ -1690,12 +1702,10 @@ if phase == PHASE_PRELIM:
         else:
             st.error(f"{diag['missing_target']} missing complianceStatus values — resolve before modeling.")
 
-        st.divider()
-        st.subheader("Entity field repairs and audits")
-        st.caption(
-            "`entityResponsible` carries more signal about compliance than any other field "
-            "(see the Responsible Entity tab), which is reason to check what it actually holds."
-        )
+        section("04", "Entity field repairs and audits",
+                "`entityResponsible` carries more signal about compliance than any other "
+                "field (see the Responsible Entity tab), which is reason to check what it "
+                "actually holds.")
 
         r1, r2, r3 = st.columns(3)
         r1.metric("Distinct entities", f"{diag.get('n_entities', 0):,}")
@@ -1711,7 +1721,7 @@ if phase == PHASE_PRELIM:
             "adjudicated by hand."
         )
 
-        c1, c2 = st.columns(2)
+        c1, c2 = st.columns(2, gap="large")
         with c1:
             st.markdown("**Values that cannot be company names**")
             if len(diag.get("nonname", [])):
@@ -1740,42 +1750,47 @@ if phase == PHASE_PRELIM:
                 with st.expander("Show candidate groups"):
                     st.dataframe(diag["dupe_detail"], width="stretch", hide_index=True)
 
-        st.divider()
-        st.subheader("Availability of fields not described elsewhere")
-        st.caption(
-            "Ten raw columns pass through the pipeline without appearing in the analysis. "
-            "Recording their availability separates a deliberate exclusion from an oversight."
-        )
+        section("05", "Availability of fields not described elsewhere",
+                "Ten raw columns pass through the pipeline without appearing in the "
+                "analysis. Recording their availability separates a deliberate exclusion "
+                "from an oversight.")
         av = diag.get("availability", pd.DataFrame())
         if len(av):
+            _ev, _nt = evidence(ratio=1.55)
             fig = px.bar(av.sort_values("Present %"), x="Present %", y="Field", orientation="h",
                          text="Present %")
             fig.update_traces(marker_color=BLUE, texttemplate="%{text:.1f}%",
                               textposition="outside", cliponaxis=False)
             fig.update_layout(height=420, xaxis_range=[0, 100], yaxis_title="")
-            chart(fig)
+            with _ev:
+                chart(fig)
 
             # Fields never plausibility-bounded still carry the errors 5.2 exists to remove.
             unb = av[~av["Field"].isin(PLAUSIBILITY_BOUNDS.keys())].copy()
             bad = unb[unb["Max / median"] > 1000]
-            if len(bad):
-                st.warning(
-                    "**These fields never passed through the Section 5.2 plausibility bounds.** "
-                    + ", ".join(f"`{r.Field}` reaches {r.Max:,.0f} against a median of {r.Median:,.1f}"
-                                for r in bad.itertuples())
-                    + ". Read their medians and quartiles; do not read their means or standard "
-                      "deviations. Any modelling use must extend the bounding first.",
-                )
-
             water = av[av["Field"].str.contains("ater")]
-            if len(water) and water["Present %"].max() > 25 > water["Present %"].min():
-                st.info(
-                    f"**The water fields split.** `totalWaterUse` is present on "
-                    f"{water['Present %'].max():.1f}% of filings while its components reach only "
-                    f"{water[water['Present %'] < 25]['Present %'].max():.1f}%. The published data "
-                    "supports aggregate water analysis but not the indoor/outdoor breakdown — a "
-                    "property of the source, not a scoping decision.",
-                )
+            with _nt:
+                if len(bad):
+                    st.warning(
+                        "**These fields never passed through the Section 5.2 plausibility "
+                        "bounds.** "
+                        + ", ".join(
+                            f"`{r.Field}` reaches {r.Max:,.0f} against a median of "
+                            f"{r.Median:,.1f}" for r in bad.itertuples())
+                        + ". Read their medians and quartiles; do not read their means or "
+                          "standard deviations. Any modelling use must extend the bounding "
+                          "first.",
+                    )
+                if len(water) and water["Present %"].max() > 25 > water["Present %"].min():
+                    st.info(
+                        f"**The water fields split.** `totalWaterUse` is present on "
+                        f"{water['Present %'].max():.1f}% of filings while its components "
+                        f"reach only "
+                        f"{water[water['Present %'] < 25]['Present %'].max():.1f}%. The "
+                        f"published data supports aggregate water analysis but not the "
+                        f"indoor/outdoor breakdown \u2014 a property of the source, not a "
+                        f"scoping decision.",
+                    )
 
         if diag.get("pctdiff_n"):
             same, n = diag["pctdiff_same"], diag["pctdiff_n"]
@@ -1793,7 +1808,8 @@ if phase == PHASE_PRELIM:
     # Tab 3 — Descriptive Stats
     # ----------------------------------------------------------------------------
     with tabs[1]:
-        st.subheader("Frequency — filing volume by property type (6.1)")
+        section("01", "Frequency \u2014 filing volume by property type (6.1)")
+        _ev, _nt = evidence(ratio=1.75)
         # A silent .head(10) dropped two categories while the caption below used the full
         # selection as its denominator. Cap at 12 to match the Top-12 preset and say so when
         # the selection is wider, rather than truncating without a note.
@@ -1807,39 +1823,40 @@ if phase == PHASE_PRELIM:
             fig.update_layout(height=max(380, 32 * len(vol)),
                               yaxis={"autorange": "reversed"})
             _pad_axis(fig, vol.values)
-            chart(fig)
-            if len(_vol_all) > len(vol):
+            with _ev:
+                chart(fig)
+            with _nt:
+              if len(_vol_all) > len(vol):
                 st.caption(
                     f"Showing the {len(vol)} largest of {len(_vol_all)} types in the current "
                     f"selection. The percentages below are computed on all "
                     f"{len(dff_seg):,} filings in the selection, not on the plotted subset."
                 )
-            if len(vol) >= 2:
+              if len(vol) >= 2:
                 # Share is computed against every complete filing in the selection, not just the
                 # plotted bars, so the sentence cannot overstate dominance when the chart is capped.
                 share = vol.iloc[0] / len(dff_seg) * 100 if len(dff_seg) else 0
                 ratio = vol.iloc[0] / vol.iloc[1]
                 if ratio >= 1.5:
-                    lead = (f"{vol.index[0].title()} dominates by volume — {ratio:.1f}× the next "
-                            f"largest category ({vol.index[1].title()}), and {share:.0f}% of all "
+                    lead = (f"**{vol.index[0].title()} dominates by volume** \u2014 "
+                            f"{ratio:.1f}\u00d7 the next largest category "
+                            f"({vol.index[1].title()}), and {share:.0f}% of all "
                             f"{len(dff_seg):,} complete filings in the current selection.")
                 else:
-                    lead = (f"{vol.index[0].title()} leads at {share:.0f}% of all {len(dff_seg):,} "
-                            f"complete filings in the current selection, but only {ratio:.2f}× "
-                            f"{vol.index[1].title()} — no single type dominates this selection.")
-                st.caption(
-                    lead + " Filing volume is real context for the Midterm: where one property "
-                    "type is far more common, overall accuracy can look strong while performance "
-                    "on the minority types stays poor."
-                )
+                    lead = (f"**{vol.index[0].title()} leads** at {share:.0f}% of all "
+                            f"{len(dff_seg):,} complete filings in the current selection, "
+                            f"but only {ratio:.2f}\u00d7 {vol.index[1].title()} \u2014 no "
+                            f"single type dominates this selection.")
+                pull("What the volumes mean for the Midterm",
+                     lead + " Where one property type is far more common, overall accuracy "
+                     "can look strong while performance on the minority types stays poor.")
 
-        st.divider()
-        st.subheader("Central tendency — mean vs. median (6.2)")
-        st.caption(
-            "Reported side by side deliberately: the gap between them is an honest indicator of "
-            "how right-skewed each field remains after cleaning. The mean alone would overstate "
-            "the energy use of a typical building."
-        )
+        # Table and chart are two views of one comparison; stacking them makes the
+        # reader hold four numbers in memory to see the gap the chart already draws.
+        section("02", "Central tendency \u2014 mean vs. median (6.2)",
+                "The gap between them is an honest indicator of how right-skewed each "
+                "field remains after cleaning. The mean alone would overstate the energy "
+                "use of a typical building.")
         rows = []
         for col in ["siteEui", "sourceEui", "co2Emissions", "energyStarScore"]:
             rows.append({
@@ -1849,8 +1866,10 @@ if phase == PHASE_PRELIM:
                 "n (non-null)": int(dff[col].notna().sum()),
             })
         central = pd.DataFrame(rows)
-        st.dataframe(central, width="stretch", hide_index=True)
-        c2 = st.container()
+        _ct, _cc = st.columns([1, 1.25], gap="large")
+        with _ct:
+            st.dataframe(central, width="stretch", hide_index=True)
+        c2 = _cc
         fig = go.Figure()
         # Mean and median are two estimators, not a good one and a bad one.
         fig.add_bar(name="Mean", x=central["Metric"], y=central["Mean"], marker_color=SLATE)
@@ -1866,8 +1885,8 @@ if phase == PHASE_PRELIM:
             "Reporting only the mean would misrepresent both cases, in opposite directions."
         )
 
-        st.divider()
-        st.subheader("Dispersion — range and standard deviation (6.3)")
+        section("03", "Dispersion \u2014 range and standard deviation (6.3)")
+        _ev, _nt = evidence(ratio=2.4, note_first=True)
         rows = []
         for col in ["siteEui", "sourceEui", "co2Emissions"]:
             flag_col = col + "IsOutlier"
@@ -1881,14 +1900,17 @@ if phase == PHASE_PRELIM:
                 "IQR-flagged": int(dff[flag_col].sum()),
                 "% flagged": round(dff[flag_col].sum() / n_valid * 100, 1) if n_valid else np.nan,
             })
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-        st.caption(
-            "The outlier-flag rate sits next to the standard deviation on purpose: it shows a "
-            "Midterm modeler how much of the tail would be affected by capping at the IQR fence."
-        )
+        with _ev:
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        with _nt:
+            st.caption(
+                "The outlier-flag rate sits next to the standard deviation on purpose: it "
+                "shows a Midterm modeler how much of the tail would be affected by capping "
+                "at the IQR fence."
+            )
 
-        st.divider()
-        st.subheader("Median Site EUI by property type")
+        section("04", "Median Site EUI by property type")
+        _ev, _nt = evidence(ratio=1.75)
         med = (dff_seg.groupby("propertyType")["siteEui"].median()
                .dropna().sort_values(ascending=False))
         if len(med):
@@ -1901,29 +1923,30 @@ if phase == PHASE_PRELIM:
             fig.update_traces(marker_color=CIVIC, textposition="outside", cliponaxis=False)
             fig.update_layout(height=max(380, 30 * len(med)), yaxis={"autorange": "reversed"})
             _pad_axis(fig, med.values)
-            chart(fig)
+            with _ev:
+                chart(fig)
         if len(med) >= 2:
             hi_name, hi_val = med.index[0].title(), med.iloc[0]
             lo_name, lo_val = med.index[-1].title(), med.iloc[-1]
             ratio = hi_val / lo_val if lo_val else float("nan")
-            st.caption(
-                f"{hi_name} reports the highest median intensity at {hi_val:,.1f} kBtu/ft², "
-                f"{ratio:.0f}× that of {lo_name} at {lo_val:,.1f}. Energy need here is a function "
-                f"of use, not efficiency — which is exactly why percentiles below are computed "
-                f"within type. Naming the leaders live rather than in fixed text, since which "
-                f"types appear depends on the sidebar selection."
-            )
+            with _nt:
+                st.info(
+                    f"**Use, not efficiency.** {hi_name} reports the highest median "
+                    f"intensity at {hi_val:,.1f} kBtu/ft\u00b2, {ratio:.0f}\u00d7 that of "
+                    f"{lo_name} at {lo_val:,.1f}. Energy need here is a function of what the "
+                    f"building is for \u2014 which is why the percentiles below are computed "
+                    f"within type. Leaders are named live, since which types appear depends "
+                    f"on the sidebar selection."
+                )
 
-        st.divider()
-        st.subheader("Position — percentile within property type (6.4)")
-        st.caption(
-            "Ranking every building against one citywide distribution would penalize an efficient "
-            "warehouse simply because warehouses use less energy than offices in general."
-        )
+        section("05", "Position \u2014 percentile within property type (6.4)",
+                "Ranking every building against one citywide distribution would penalize an "
+                "efficient warehouse simply because warehouses use less energy than offices "
+                "in general.")
         dff_seg["siteEuiPercentileInType"] = (
             dff_seg.groupby("propertyType")["siteEui"].rank(pct=True).round(3)
         )
-        c1, c2 = st.columns([1, 2])
+        c1, c2 = st.columns([1, 1.9], gap="large")
         with c1:
             type_options = sorted(dff_seg["propertyType"].dropna().unique())
             if type_options:
@@ -1954,9 +1977,9 @@ if phase == PHASE_PRELIM:
     # Tab 4 — Figures 1-4
     # ----------------------------------------------------------------------------
     with tabs[2]:
-        st.subheader("Figure 1 — Site EUI distribution")
+        section("Fig. 1", "Site EUI distribution")
         eui = dff[["siteEui", "siteEuiIsOutlier"]].dropna(subset=["siteEui"])
-        c1, c2 = st.columns(2)
+        c1, c2 = st.columns(2, gap="large")
         with c1:
             fig = go.Figure()
             fig.add_histogram(x=eui.loc[~eui["siteEuiIsOutlier"], "siteEui"], nbinsx=60,
@@ -1991,8 +2014,8 @@ if phase == PHASE_PRELIM:
             "no `siteEui` value in the dataframe is modified by this view."
         )
 
-        st.divider()
-        st.subheader("Figure 2 — Compliance rate by property type")
+        section("Fig. 2", "Compliance rate by property type")
+        _ev, _nt = evidence(ratio=1.9, note_first=True)
         _type_stats = dff_seg.groupby("propertyType")["isCompliant"].agg(["mean", "count"])
         _type_stats["mean"] *= 100
         _small = _type_stats[_type_stats["count"] < MIN_TYPE_FILINGS]
@@ -2013,24 +2036,26 @@ if phase == PHASE_PRELIM:
                               xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                               xaxis_range=[0, 118],   # 18% headroom, matching _pad_axis
                               title="Below the 80% reference line is marked in ochre")
-            chart(fig)
-        st.caption(
-            "The 80% line is a fixed reading aid chosen for this analysis, not a target set by "
-            "the EBEWE ordinance — the ordinance sets filing deadlines and per-building fees, "
-            "not a compliance-rate goal. It is used rather than the citywide average so a bar's "
-            "colour only changes when that property type's own rate changes."
-        )
-        if len(_small):
-            st.caption(
-                f"{len(_small)} type(s) with fewer than {MIN_TYPE_FILINGS} complete filings are "
-                f"excluded from this chart: a rate computed on a handful of filings would swing "
-                f"across the line on one building."
-            )
+            with _ev:
+                chart(fig)
+        with _nt:
+            with card():
+                st.markdown(
+                    "**The 80% line is a reading aid, not a target.** The EBEWE ordinance "
+                    "sets filing deadlines and per-building fees, not a compliance-rate "
+                    "goal. A fixed line is used rather than the citywide average so a "
+                    "bar's colour only changes when that property type's own rate changes."
+                )
+                if len(_small):
+                    st.caption(
+                        f"{len(_small)} type(s) with fewer than {MIN_TYPE_FILINGS} complete "
+                        f"filings are excluded: a rate computed on a handful of filings "
+                        f"would swing across the line on one building."
+                    )
 
-        st.divider()
         c1, c2 = st.container(), st.container()
         with c1:
-            st.subheader("Figure 3 — Median Site EUI by building age")
+            section("Fig. 3", "Median Site EUI by building age")
             aged = dff[dff["ageBucket"] != "UNKNOWN"]
             age_eui = aged.groupby("ageBucket")["siteEui"].median().reindex(AGE_ORDER)
             age_n = aged["ageBucket"].value_counts().reindex(AGE_ORDER)
@@ -2040,13 +2065,15 @@ if phase == PHASE_PRELIM:
             fig.update_traces(marker_color=BLUE, textposition="outside", cliponaxis=False)
             fig.update_layout(height=420)
             _pad_axis(fig, age_eui.values, axis="y", pad=0.12)
-            chart(fig)
-            st.caption("Median, not mean — a handful of real but extreme buildings would "
-                       "misrepresent the typical building of an era.")
+            _ev, _nt = evidence(ratio=2.3)
+            with _ev:
+                chart(fig)
+            with _nt:
+                st.caption("Median, not mean \u2014 a handful of real but extreme buildings "
+                           "would misrepresent the typical building of an era.")
             st.write(age_n.rename("n per bucket").to_frame().T)
-            st.divider()
         with c2:
-            st.subheader("Figure 4 — Top 15 postal codes by total emissions")
+            section("Fig. 4", "Top 15 postal codes by total emissions")
             # Summed across every program year in the current range, so at more than one
             # filing per building this stacks repeated annual readings rather than measuring
             # a single year. The axis is labelled with the range it covers, and the ratio is
@@ -2063,13 +2090,17 @@ if phase == PHASE_PRELIM:
             # Single series again; no encoding, so no second hue.
             fig.update_traces(marker_color=CIVIC)
             fig.update_layout(height=560, yaxis={"autorange": "reversed", "type": "category"})
-            chart(fig)
-            st.caption(f"Total, not average — this view is about where retrofit and enforcement "
-                       f"resources should go, which depends on total carbon impact. The bars sum "
-                       f"every filing from {_yr_lo} to {_yr_hi} — {_n_bldg:,} buildings at "
-                       f"{_fpb:.2f} filings each — so a postal code with more years of coverage "
-                       f"accumulates more; the top ranks are stable but the tail "
-                       f"shifts if a single year is used instead.")
+            _ev, _nt = evidence(ratio=1.8)
+            with _ev:
+                chart(fig)
+            with _nt:
+                st.caption(
+                    f"Total, not average \u2014 this view is about where retrofit and "
+                    f"enforcement resources should go, which depends on total carbon "
+                    f"impact. The bars sum every filing from {_yr_lo} to {_yr_hi} \u2014 "
+                    f"{_n_bldg:,} buildings at {_fpb:.2f} filings each \u2014 so a postal "
+                    f"code with more years of coverage accumulates more; the top ranks are "
+                    f"stable but the tail shifts if a single year is used instead.")
 
     # ----------------------------------------------------------------------------
     # Tab 5 — Compliance Trend (Figure 5 + Section 6.5)
@@ -2108,8 +2139,9 @@ else:
     ])
 
     with tabs[0]:
-        st.subheader("Figure 5 — Is compliance declining, or is filing completeness?")
+        section("Fig. 5", "Is compliance declining, or is filing completeness?")
         # series computed once above the tabs; see the note there
+        _ev, _nt = evidence(ratio=2.0)
 
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(go.Scatter(x=yearly_overall.index, y=yearly_overall.values,
@@ -2128,33 +2160,32 @@ else:
                          color=RED, showgrid=False)
         fig.update_layout(height=480, xaxis_title="Program Year",
                           legend={"orientation": "h", "y": -0.2})
-        chart(fig)
-        st.caption(
-            "The three series are overlaid because the finding *is* the gap between them, and "
-            "the way that gap widens as the incomplete-filing rate climbs."
-        )
-
-        if len(yearly_overall) >= 2:
+        with _ev:
+            chart(fig)
+        with _nt:
+            st.caption(
+                "The three series are overlaid because the finding *is* the gap between "
+                "them, and the way that gap widens as the incomplete-filing rate climbs."
+            )
             # The three figures this tab would otherwise tile here are already in the
             # band above the tabs, which stays on screen. Repeating them is the
-            # redundancy, not the restatement of the caveat that follows.
-            st.warning(
-                "**These are endpoint figures and they overstate their own precision.** The "
-                "building roster is not constant — the ordinance phased in by size, so early "
-                "years cover a fraction of the buildings later years do — and the final program "
-                "year may still be partially processed. On a fixed set of buildings the same "
-                "share ranges from roughly 40% to 84% depending on the cohort and end year "
-                "chosen. See the balanced-panel comparison below.",
-            )
+            # redundancy, not the restatement of the caveat below.
+            if len(yearly_overall) >= 2:
+                st.warning(
+                    "**These are endpoint figures and they overstate their own "
+                    "precision.** The building roster is not constant \u2014 the ordinance "
+                    "phased in by size, so early years cover a fraction of the buildings "
+                    "later years do \u2014 and the final program year may still be "
+                    "partially processed. On a fixed set of buildings the same share "
+                    "ranges from roughly 40% to 84% depending on the cohort and end year "
+                    "chosen. See the balanced-panel comparison below.",
+                )
 
-        st.divider()
-        st.subheader("The same trend on a fixed set of buildings")
-        st.caption(
-            "Restricting to buildings observed in every year removes roster growth as an "
-            "explanation, so any remaining change is buildings behaving differently rather "
-            "than different buildings being present. The window starts where roster "
-            "coverage matures, matching Section 6.5.1 of the notebook."
-        )
+        section("06", "The same trend on a fixed set of buildings",
+                "Restricting to buildings observed in every year removes roster growth as "
+                "an explanation, so any remaining change is buildings behaving differently "
+                "rather than different buildings being present. The window starts where "
+                "roster coverage matures, matching Section 6.5.1 of the notebook.")
 
         # Balanced panel, anchored the same way as notebook Section 6.5.1: start at the
         # first year the roster reaches 95% of its peak, rather than at the earliest year
@@ -2192,7 +2223,9 @@ else:
             fig.update_layout(height=420, xaxis_title="Program Year", yaxis_title="% Compliant",
                               title=f"{len(_panel):,} buildings held constant, {_yrs[0]}–{_yrs[-1]}",
                               legend={"orientation": "h", "y": -0.2})
-            chart(fig)
+            _ev, _nt = evidence(ratio=1.75)
+            with _ev:
+                chart(fig)
 
             # The shape, stated from the data. The final-year fall is excluded when locating
             # the break, since it is usually the steepest drop and is reported separately.
@@ -2200,50 +2233,54 @@ else:
             if len(_d) >= 3:
                 _bi = int(np.argmin(_d[:-1])) + 1
                 _mid = _c.iloc[_bi:-1]
-                k1, k2, k3 = st.columns(3)
-                k1.metric(f"Break at {_c.index[_bi]}", f"{_d[_bi-1]:+.1f} pts")
-                k2.metric(f"{_mid.index[0]}–{_mid.index[-1]}",
-                          f"{_mid.iloc[-1] - _mid.iloc[0]:+.1f} pts")
-                k3.metric(f"Final year ({_c.index[-1]})", f"{_d[-1]:+.1f} pts")
-                if _mid.iloc[-1] > _mid.iloc[0]:
-                    st.success(
-                        f"With the building set held constant, compliance among complete filings "
-                        f"**improved** {_mid.iloc[-1] - _mid.iloc[0]:.1f} points between "
-                        f"{_mid.index[0]} and {_mid.index[-1]}. The series is a one-year break, a "
-                        f"multi-year recovery, and a final-year drop — not a steady decline. An "
-                        f"endpoint comparison conceals this because a line drawn between the first "
-                        f"and last points passes straight over the recovery.",
-                    )
+                with _nt:
+                    # Three readings of one line: stacked beside the chart they annotate
+                    # the shape; tiled under it they read as a scorecard of their own.
+                    st.metric(f"Break at {_c.index[_bi]}", f"{_d[_bi-1]:+.1f} pts")
+                    st.metric(f"{_mid.index[0]}\u2013{_mid.index[-1]}",
+                              f"{_mid.iloc[-1] - _mid.iloc[0]:+.1f} pts")
+                    st.metric(f"Final year ({_c.index[-1]})", f"{_d[-1]:+.1f} pts")
+            if len(_d) >= 3 and _mid.iloc[-1] > _mid.iloc[0]:
+                pull(
+                    "Held constant, compliance improved",
+                    f"With the building set fixed, compliance among complete filings rose "
+                    f"**{_mid.iloc[-1] - _mid.iloc[0]:.1f} points** between {_mid.index[0]} "
+                    f"and {_mid.index[-1]}. The series is a one-year break, a multi-year "
+                    f"recovery, and a final-year drop \u2014 not a steady decline. An "
+                    f"endpoint comparison conceals this because a line drawn between the "
+                    f"first and last points passes straight over the recovery.")
 
-            st.dataframe(_bal, width="stretch")
+            with st.expander("Balanced-panel figures by year"):
+                st.dataframe(_bal, width="stretch")
 
-        st.divider()
-        st.subheader("All filings, unbalanced roster")
+        section("07", "All filings, unbalanced roster")
         trend_table = pd.DataFrame({
             "Overall Compliance %": yearly_overall.round(1),
             "Compliance % (complete filings only)": yearly_complete.round(1),
             "Incomplete Filing %": yearly_incomplete.round(1),
             "Buildings in roster": dff.groupby("programYear")["buildingId"].nunique(),
         })
-        st.dataframe(trend_table, width="stretch")
-        st.caption(
-            "The roster column is why the endpoint comparison above needs care: where it grows, "
-            "a change in the compliance rate partly reflects a change in which buildings are "
-            "being measured."
-        )
+        _ev, _nt = evidence(ratio=2.4, note_first=True)
+        with _ev:
+            st.dataframe(trend_table, width="stretch")
+        with _nt:
+            st.caption(
+                "The roster column is why the endpoint comparison above needs care: where "
+                "it grows, a change in the compliance rate partly reflects a change in "
+                "which buildings are being measured."
+            )
 
     # ----------------------------------------------------------------------------
     # Tab 6 — Coverage Tier (Section 6.9)
     # ----------------------------------------------------------------------------
     with tabs[1]:
-        st.subheader("Coverage tier predicts filing, not compliance")
-        st.caption(
-            "`ladbsBuildingCategory` is the ordinance's own size and ownership segmentation. "
-            f"Unlike {', '.join(diag.get('comissing_fields', STRUCTURAL_COLS))} — all missing "
-            f"on the structurally incomplete filings — it is populated on every record. It is "
-            f"therefore the only structural field that can answer which buildings file "
-            f"incompletely."
-        )
+        section("01", "Coverage tier predicts filing, not compliance",
+                "`ladbsBuildingCategory` is the ordinance's own size and ownership "
+                "segmentation. Unlike "
+                f"{', '.join(diag.get('comissing_fields', STRUCTURAL_COLS))} \u2014 all "
+                "missing on the structurally incomplete filings \u2014 it is populated on "
+                "every record, so it is the only structural field that can answer which "
+                "buildings file incompletely.")
         # The ordinance floor is 20,000 sq ft for private buildings and 7,500 for city-owned
         # ones, so the tiers below 20,000 exist only because city-owned buildings are covered
         # lower. Checked against the data rather than asserted from the ordinance text.
@@ -2284,12 +2321,14 @@ else:
             _inc = (dff.groupby("sizeBand")["isIncompleteFiling"].mean() * 100).reindex(_bands)
             _sa, _sc = _all.max() - _all.min(), _cmp.max() - _cmp.min()
 
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Spread, all filings", f"{_sa:.1f} pts")
-            k2.metric("Spread, complete filings only", f"{_sc:.1f} pts")
-            k3.metric("Spread, incompleteness rate", f"{_inc.max() - _inc.min():.1f} pts")
+            band([
+                ("Spread, all filings", f"{_sa:.1f} pts"),
+                ("Spread, complete only", f"{_sc:.1f} pts"),
+                ("Spread, incompleteness", f"{_inc.max() - _inc.min():.1f} pts"),
+                ("Tiers compared", f"{len(_bands)}"),
+            ], highlight=1)
 
-            c1, c2 = st.columns(2)
+            c1, c2 = st.columns(2, gap="large")
             with c1:
                 fig = go.Figure()
                 fig.add_bar(y=_bands, x=_all.values, orientation="h", name="All filings",
@@ -2318,79 +2357,77 @@ else:
 
             # The conclusion holds only if the spread genuinely collapses. State it either way.
             if _sa > 0 and _sc < _sa / 2:
-                st.success(
-                    f"Compliance varies {_sa:.1f} points across coverage tiers, but only {_sc:.1f} "
-                    f"points among complete filings. **Coverage tier predicts whether a building "
-                    f"completes a filing, not whether it complies once it has.** Panel B is the "
-                    f"mechanism: incompleteness runs from {_inc.min():.1f}% for {_inc.idxmin()} to "
-                    f"{_inc.max():.1f}% for {_inc.idxmax()}. Because incomplete filings are almost "
-                    f"never compliant, that pattern surfaces in the headline rate as though it were "
-                    f"a difference in performance.",
-                )
+                pull(
+                    "Coverage tier predicts filing, not compliance",
+                    f"Compliance varies **{_sa:.1f} points** across coverage tiers, but only "
+                    f"**{_sc:.1f} points** among complete filings. Panel B is the mechanism: "
+                    f"incompleteness runs from {_inc.min():.1f}% for {_inc.idxmin()} to "
+                    f"{_inc.max():.1f}% for {_inc.idxmax()}. Because incomplete filings are "
+                    f"almost never compliant, that pattern surfaces in the headline rate as "
+                    f"though it were a difference in performance.")
             else:
-                st.info(
-                    f"The compliance spread does not collapse once incomplete filings are excluded "
-                    f"({_sa:.1f} to {_sc:.1f} points). Coverage tier is associated with compliance "
-                    f"beyond its association with filing completeness, so the two panels are "
-                    f"separate findings rather than one mechanism.",
-                )
+                pull(
+                    "The spread does not collapse",
+                    f"Excluding incomplete filings moves the compliance spread from "
+                    f"**{_sa:.1f}** to **{_sc:.1f} points**. Coverage tier is associated "
+                    f"with compliance beyond its association with filing completeness, so "
+                    f"the two panels are separate findings rather than one mechanism.")
 
-            st.divider()
-            st.subheader("Incompleteness by tier and program year")
-            st.caption(
-                "Tiers moving together in one year points to a programme-wide change; one tier "
-                "moving alone points to that tier's own phase-in date. Read alongside the "
-                "Compliance Trend tab. The 2019 break has one documented cause — deadlines for "
-                "Program Years 2019–2021 were tolled — and the size-tier phase-in is not a second "
-                "one: the 20,000–49,999 sq ft band steps at 2018, which is visible in the chart "
-                "below."
-            )
+            section("02", "Incompleteness by tier and program year",
+                    "Tiers moving together in one year points to a programme-wide change; "
+                    "one tier moving alone points to that tier's own phase-in date. The "
+                    "2019 break has one documented cause \u2014 deadlines for Program Years "
+                    "2019\u20132021 were tolled \u2014 and the size-tier phase-in is not a "
+                    "second one: the 20,000\u201349,999 sq ft band steps at 2018.")
+            _ev, _nt = evidence(ratio=1.9)
             _piv = (dff.pivot_table(index="programYear", columns="sizeBand",
                                     values="isIncompleteFiling", aggfunc="mean") * 100).round(1)
             if len(_piv) >= 2 and _piv.shape[1] >= 2:
                 fig = go.Figure()
-                for _i, band in enumerate(_piv.columns):
+                for _i, _band in enumerate(_piv.columns):
                     # Coverage tier is ordered by building size, so the series take an
                     # ordered ramp rather than Plotly's categorical cycle — which put an
                     # arbitrary red beside an arbitrary green on a size variable and
                     # invited a good/bad reading of what is just "bigger" and "smaller".
                     fig.add_trace(go.Scatter(
-                        x=_piv.index, y=_piv[band], mode="lines+markers", name=band,
+                        x=_piv.index, y=_piv[_band], mode="lines+markers", name=_band,
                         line={"color": TIER_SEQUENCE[_i % len(TIER_SEQUENCE)], "width": 2},
                         marker={"size": 6}))
                 fig.update_layout(height=420, xaxis_title="Program Year",
                                   yaxis_title="% structurally incomplete",
                                   legend={"orientation": "h", "y": -0.25})
-                chart(fig)
+                with _ev:
+                    chart(fig)
 
                 _yoy = _piv.diff()
                 _rose = (_yoy > 0).sum(axis=1)
                 _broad = _rose[_rose == _rose.max()]
-                if _rose.max() == _piv.shape[1]:
-                    st.caption(
-                        f"All {_piv.shape[1]} tiers rose together in "
-                        f"{', '.join(str(y) for y in _broad.index)}. Breadth alone does not identify "
-                        "one year — compare magnitude and evenness before reading any single year as "
-                        "a programme-wide event."
+                with _nt:
+                    if _rose.max() == _piv.shape[1]:
+                        st.caption(
+                            f"All {_piv.shape[1]} tiers rose together in "
+                            f"{', '.join(str(y) for y in _broad.index)}. Breadth alone does "
+                            "not identify one year \u2014 compare magnitude and evenness "
+                            "before reading any single year as a programme-wide event."
+                        )
+                    st.info(
+                        "`isCityOwned` and `sizeBand` are derived from this field and are "
+                        "available on incomplete filings, which makes them the only "
+                        "structural features usable across all filings rather than the "
+                        "complete subset alone.",
                     )
-            st.dataframe(_piv, width="stretch")
-
-            st.info(
-                "`isCityOwned` and `sizeBand` are derived from this field and are available on "
-                "incomplete filings, which makes them the only structural features usable across "
-                "all filings rather than the complete subset alone.",
-            )
+            with st.expander("Incompleteness by tier and year, as a table"):
+                st.dataframe(_piv, width="stretch")
 
     # ----------------------------------------------------------------------------
     # Tab 7 — Responsible Entity (Section 6.7)
     # ----------------------------------------------------------------------------
     with tabs[2]:
-        st.subheader("Who files matters more than what is filed")
-        st.caption(
-            "`entityResponsible` records the organisation that submitted the benchmark report. "
-            "Incomplete filings are excluded throughout: they carry UNKNOWN and are almost never "
-            "compliant, so including them would manufacture the variation this view measures."
-        )
+        section("01", "Who files matters more than what is filed",
+                "`entityResponsible` records the organisation that submitted the benchmark "
+                "report. Incomplete filings are excluded throughout: they carry UNKNOWN and "
+                "are almost never compliant, so including them would manufacture the "
+                "variation this view measures.")
 
         MIN_FILINGS = 100
         _ag = (dff_complete[dff_complete["entityResponsible"] != "UNKNOWN"]
@@ -2418,16 +2455,18 @@ else:
             _tall["mean"] *= 100
             _tall = _tall[_tall["count"] >= MIN_TYPE_FILINGS]["mean"]
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric(f"Agents with {MIN_FILINGS}+ filings", f"{len(_big):,}")
             # One decimal, not zero. The per-agent rates are rounded to 1dp above, so this
             # spread is exactly 98.5 on the current data — and Python's round-half-to-even
             # rendered that as "98" while the table below said 98.5. Two figures for one
             # quantity, differing only by how they were displayed.
-            c2.metric("Spread across agents",
-                      f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts")
-            c3.metric("Spread across property types",
-                      f"{_types.max() - _types.min():.1f} pts" if len(_types) > 1 else "n/a")
+            band([
+                (f"Agents with {MIN_FILINGS}+ filings", f"{len(_big):,}"),
+                ("Spread across agents",
+                 f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts"),
+                ("Spread across property types",
+                 f"{_types.max() - _types.min():.1f} pts" if len(_types) > 1 else "n/a"),
+                ("Baseline, complete filings", f"{_base:.1f}%"),
+            ], highlight=1)
             # The property-type spread is dominated by whichever single category sits below
             # the benchmark; report it with and without, since the decomposition below shows
             # that outlier is itself an operator effect.
@@ -2436,11 +2475,15 @@ else:
                 # The bases were previously described in a 106-word paragraph. They are two
                 # measurements with different denominators, which is a comparison — so it is
                 # shown as one, with the warning about comparability kept as the lead.
-                st.caption(
-                    "These two spreads use different denominators and are not comparable as "
-                    "ratios. Both bases are stated so the comparison can be read for what it is."
-                )
-                st.dataframe(pd.DataFrame([
+                _ev, _nt = evidence(ratio=3.1)
+                with _nt:
+                    st.caption(
+                        "These two spreads use different denominators and are not "
+                        "comparable as ratios. Both bases are stated so the comparison can "
+                        "be read for what it is."
+                    )
+                with _ev:
+                    st.dataframe(pd.DataFrame([
                     # Range second, not last. It is the only column carrying a number and it was
                     # the one that truncated, leaving three rows of denominators and no figures.
                     {"Spread": "Across responsible agents",
@@ -2455,14 +2498,15 @@ else:
                      "Range": f"{_tall.max() - _tall.min():.1f} pts",
                      "Basis": f"types with {MIN_TYPE_FILINGS}+ filings",
                      "Population": f"{len(_tall)} types"},
-                ]), width="stretch", hide_index=True)
-                st.caption(
-                    f"The lowest type ({_types.idxmin().title()}, {_types.min():.1f}%) accounts "
-                    f"for much of the type spread — drop it and the remaining {len(_wo)} span "
-                    f"{_wo.max() - _wo.min():.1f} points. On either basis the responsible entity "
-                    f"discriminates more sharply than building function does, and the category "
-                    f"that looks like an exception is decomposed below."
-                )
+                    ]), width="stretch", hide_index=True)
+                pull(
+                    "The entity discriminates more sharply than building function",
+                    f"The lowest type ({_types.idxmin().title()}, {_types.min():.1f}%) "
+                    f"accounts for much of the type spread \u2014 drop it and the remaining "
+                    f"{len(_wo)} span **{_wo.max() - _wo.min():.1f} points**. On either "
+                    f"basis the responsible entity separates compliance more sharply than "
+                    f"building function does, and the category that looks like an exception "
+                    f"is decomposed below.")
             else:
                 st.caption(f"Too few property types in the current selection to report a spread. "
                            f"The agent spread covers all {len(dff_complete):,} complete filings.")
@@ -2480,10 +2524,10 @@ else:
             fig.update_layout(height=max(420, 26 * len(_show)), xaxis_range=[0, 118],
                               xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                               title="Lowest and highest compliance among high-volume agents")
+            section("02", "The agents at each end")
             chart(fig)
 
-            st.divider()
-            st.subheader("Does a pooled agent rate describe any actual year?")
+            section("03", "Does a pooled agent rate describe any actual year?")
             _yrs = sorted(dff_complete["programYear"].unique())
             if len(_yrs) >= 4:
                 _mid = _yrs[len(_yrs) // 2]
@@ -2520,7 +2564,7 @@ else:
                 st.caption("Widen the program-year range to compare agents across periods.")
 
             st.divider()
-            st.subheader("Is the lowest property type a category or its operators?")
+            section("04", "Is the lowest property type a category or its operators?")
             _flagged = _types[_types < 80].sort_values()
             if _flagged.empty:
                 st.info("No property type falls below the 80% reference line in the current "
@@ -2606,7 +2650,7 @@ else:
                         columns={"mean": "compliance %", "count": "filings"}), width="stretch")
 
             st.divider()
-            st.subheader("Is the agent effect an outsourcing effect?")
+            section("05", "Is the agent effect an outsourcing effect?")
             st.caption(
                 "`entityResponsible` mixes three kinds of filer: compliance vendors filing for many "
                 "owners, property managers filing for buildings they operate, and owners filing for "
@@ -2752,7 +2796,8 @@ else:
     # Tab 8 — Correlations (Figure 6 + Section 6.6)
     # ----------------------------------------------------------------------------
     with tabs[3]:
-        st.subheader("Figure 6 — Correlation heatmap")
+        section("Fig. 6", "Correlation heatmap")
+        _ev, _nt = evidence(ratio=1.9)
         corr_cols = CORR_COLS + ["isCompliant"]
         corr = dff[corr_cols].corr().round(2)
         masked = corr.mask(np.triu(np.ones(corr.shape), k=1).astype(bool))
@@ -2766,18 +2811,20 @@ else:
             yaxis={"automargin": True},
             coloraxis_colorbar={"thickness": 14},
         )
-        chart(fig)
+        with _ev:
+            chart(fig)
 
-        st.warning(
-            "**Not all strong correlations are the same kind of finding.** `siteEui` ↔ `sourceEui` "
-            "(r ≈ 0.94) is *empirical* — two distinct measurements that move together because "
-            "efficient buildings tend to be efficient on both. `siteEui` ↔ `ghgIntensityPer1kSqft` "
-            "(r ≈ 0.98) is *structural*: GHG intensity is calculated from the same energy data Site "
-            "EUI already represents. No amount of cleaning will reduce the second one, and treating "
-            "it as a data-quality problem would be a mistake.",
-        )
+        with _nt:
+            st.warning(
+                "**Not all strong correlations are the same kind of finding.** `siteEui` ↔ `sourceEui` "
+                "(r ≈ 0.94) is *empirical* — two distinct measurements that move together because "
+                "efficient buildings tend to be efficient on both. `siteEui` ↔ `ghgIntensityPer1kSqft` "
+                "(r ≈ 0.98) is *structural*: GHG intensity is calculated from the same energy data Site "
+                "EUI already represents. No amount of cleaning will reduce the second one, and treating "
+                "it as a data-quality problem would be a mistake.",
+            )
 
-        st.subheader("Flagged pairs (|r| > 0.80)")
+        section("02", "Flagged pairs (|r| > 0.80)")
         flagged = []
         for i in range(len(CORR_COLS)):
             for j in range(i + 1, len(CORR_COLS)):
@@ -2801,8 +2848,7 @@ else:
             "both adds no information, it just inflates the standard errors on both coefficients."
         )
 
-        st.divider()
-        st.subheader("Correlation with the classification target")
+        section("03", "Correlation with the classification target")
         target_corr = (dff[corr_cols].corr()["isCompliant"].drop("isCompliant")
                        .sort_values(ascending=False).round(3))
         fig = px.bar(x=target_corr.values, y=target_corr.index, orientation="h",
