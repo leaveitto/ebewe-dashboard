@@ -86,8 +86,8 @@ else:
     # filled shapes. As a chart line on white it measures 1.54:1 and disappears. OCHRE is
     # the same hue darkened to 3.63:1, so a line or a small marker still reads.
     YELLOW = "#FFC93C"
-    # Ordered steps for charts that genuinely need more than two categories (the per-tier
-    # series). Sequential in lightness so they stay separable in greyscale and in print.
+    # Ordered steps for charts that need more than two categories (the per-tier series).
+    # Sequential in lightness so they stay separable in greyscale and in print.
     TIER_SEQUENCE = ["#4A3607", "#7A5A09", "#B07D0A", "#D3A63F", "#E9CE8C"]
 
 # Call-site aliases. BLUE and RED are kept because they read naturally at the point of
@@ -130,12 +130,6 @@ st.markdown(
          Inheriting instead means the browser repaints the moment the toggle is used, with
          no rerun and nothing to keep in sync. Every surface below is derived from the
          inherited text colour with color-mix, so it tracks whichever theme is active. */
-      /* Ground. Streamlit's default white is colder than the palette and makes the
-         ochre read as alarm rather than as the second encoding hue. A warm off-white
-         with a slightly deeper sidebar gives the page a paper ground and lets the
-         cards and tables sit on it without borders doing all the work. Light mode
-         only: the dark tokens above already handle the other case, and pinning a
-         colour here is what broke dark mode in an earlier version. */
       html, body, .stApp, .stMarkdown, .stCaption, .stDataFrame,
       [data-testid="stMetricValue"], [data-testid="stMetricLabel"],
       .stTabs [data-baseweb="tab"], [data-testid="stWidgetLabel"] {
@@ -222,13 +216,12 @@ st.markdown(
 )
 
 # ----------------------------------------------------------------------------
-# Ground — light mode only
+# Ground and interface — light mode only
 # ----------------------------------------------------------------------------
-# A grey page with white cards floating on it, rather than Streamlit's flat white.
-# The separation is what lets a card be a unit: the border does almost nothing and the
-# ground does the work, which is why the corners can be soft without looking fussy.
-# Applied only in light mode — the dark tokens above handle the other case, and pinning
-# colours unconditionally is what broke dark mode in an earlier version.
+# A grey page with white cards floating on it. The separation is what lets a card be a
+# unit: the border does almost nothing and the ground does the work. Light mode only —
+# the dark tokens above handle the other case, and pinning colours unconditionally is
+# what broke dark mode in an earlier version.
 #
 # Same no-blank-lines rule as the sheet above: a blank line followed by indented text is
 # markdown's code-block syntax and would close the <style> element early.
@@ -239,83 +232,51 @@ if not IS_DARK:
           .stApp { background-color: #F3F4F6; }
           section[data-testid="stSidebar"] { background-color: #FFFFFF;
             border-right: 1px solid #E5E7EB; }
-          /* Cards, found by their marker rather than by a class Streamlit regenerates. */
           [data-testid="stElementContainer"]:has(> div > div > .cardmark) { display: none; }
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
             background: #FFFFFF; border: 1px solid #E5E7EB !important; border-radius: 16px;
-            padding: 1.1rem 1.3rem 1.2rem; box-shadow: 0 1px 2px rgba(31,35,41,.05); }
-          /* Cards in a row match heights, and whatever action they end with sits on a
-             common baseline. Without this each card is as tall as its own text, so three
-             summaries of different lengths put three buttons at three heights — the
-             content decides the layout instead of the layout holding the content. */
+            padding: 1.1rem 1.3rem 1.2rem; box-shadow: 0 1px 2px rgba(31,35,41,.05);
+            display: flex; flex-direction: column; height: 100%; }
           [data-testid="stHorizontalBlock"] { align-items: stretch; }
           [data-testid="stColumn"] > [data-testid="stVerticalBlock"] { height: 100%; }
-          /* Streamlit puts a layout wrapper between the column and the card, and it does
-             not stretch on its own, so the column matches its neighbours while the card
-             inside stays as tall as its own text. */
           [data-testid="stColumn"] [data-testid="stLayoutWrapper"] { flex: 1 1 auto;
             height: 100%; }
-          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
-            display: flex; flex-direction: column; height: 100%; }
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark)
             > [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
             margin-top: auto; padding-top: 0.6rem; }
           [data-testid="stButton"] button { width: 100%; }
-          /* Metric tiles sit inside cards, so they take the page grey rather than white —
-             a white tile on a white card has nothing to sit against. */
+          [data-testid="stMain"] [data-testid="stBaseButton-secondary"] {
+            background: #FFC93C; border: none; color: #1F2329; font-weight: 600;
+            border-radius: 10px; }
+          [data-testid="stMain"] [data-testid="stBaseButton-secondary"]:hover {
+            background: #F0B82C; color: #1F2329; }
           [data-testid="stMetric"] { background: #F3F4F6; border-radius: 12px;
             padding: 0.7rem 0.9rem 0.8rem; }
-          [data-testid="stMetricLabel"] { opacity: 0.68; }
-          [data-testid="stDataFrame"] { border-radius: 12px; }
-          hr { border-color: #E5E7EB !important; }
-          /* The active tab carries the amber, not the bright yellow: an underline is a
-             thin mark and the bright one would vanish against white. */
-          .stTabs [data-baseweb="tab-highlight"] { background-color: #B07D0A; }
-          .stTabs [data-baseweb="tab-list"] { gap: 1.4rem; border-bottom: 1px solid #E5E7EB; }
-          .stTabs [data-baseweb="tab"] { padding: 0 0 0.55rem; color: #6B7280; }
-          .stTabs [aria-selected="true"] { color: #1F2329; font-weight: 600; }
-          /* Phase nav. Each option becomes a card on the page grey; the selected one
-             takes the bright yellow, which is a filled shape and so can carry it.
-             stRadioOption and stRadioGroup are Streamlit's own hooks — an earlier
-             version targeted [role="radiogroup"] > label, which matches nothing. */
-          /* The group shrank to its longest label, so the cards were 112px inside a
-             230px sidebar. Stretching the group is what makes them one width. */
-          .st-key-phase, .st-key-phase [data-testid="stRadio"] { width: 100%; }
-          .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; width: 100%;
-            align-items: stretch; }
-          /* The card is the group's direct child, not stRadioOption: Streamlit renders
-             the option and its caption as siblings inside that child, so styling the
-             option alone leaves the caption outside the card. */
-          .st-key-phase [data-testid="stRadioGroup"] > * {
-            background: #F3F4F6; border-radius: 12px; padding: 0.55rem 0.75rem 0.6rem;
-            margin: 0; width: 100%; box-sizing: border-box;
-            transition: background 120ms ease; }
-          .st-key-phase [data-testid="stRadioGroup"] > *:hover {
-            background: #ECEEF1; }
-          .st-key-phase [data-testid="stRadioGroup"] > *:has(input:checked) {
-            background: #FFC93C; }
-          .st-key-phase [data-testid="stRadioOption"] { margin: 0; cursor: pointer; }
-          /* The dot goes. It is the one child of the option row without a test id — the
-             other is the label's markdown container. With the whole card filled on
-             selection the dot is a second signal for one state, and it is what makes the
-             nav read as a form control rather than as something to press. */
-          .st-key-phase [data-testid="stRadioOption"] > div > div:not([data-testid]) {
-            display: none; }
-          .st-key-phase [data-testid="stRadioOption"] > div { gap: 0; }
-          .st-key-phase [data-testid="stRadioGroup"] > *:active { transform: scale(0.985); }
-          .st-key-phase [data-testid="stRadioCaption"] {
-            font-size: 0.68rem; opacity: 0.72; }
-          /* The tab block is the card. Wrapping every tab body in a container would mean
-             re-indenting a thousand lines; styling the wrapper Streamlit already emits
-             puts all of that content on a white panel for four rules. */
+          [data-testid="stDataFrame"] { border-radius: 12px; border: 1px solid #E5E7EB; }
+          hr { border-color: #E5E7EB !important; margin: 0.9rem 0 !important; }
           [data-testid="stTabs"] { background: #FFFFFF; border: 1px solid #E5E7EB;
             border-radius: 16px; padding: 1.1rem 1.3rem 1.3rem;
             box-shadow: 0 1px 2px rgba(31,35,41,.05); }
           [data-testid="stTabs"] [data-testid="stMetric"] { background: #F3F4F6; }
-          /* Density. Streamlit's defaults are built for a document; this is a
-             dashboard, so the vertical rhythm is roughly halved and the type scale
-             comes down a step. Nothing is removed — the same content simply stops
-             spending a third of the first screen before showing a number. */
+          .stTabs [data-baseweb="tab-highlight"] { background-color: #B07D0A; }
+          .stTabs [data-baseweb="tab-list"] { gap: 1.4rem; border-bottom: 1px solid #E5E7EB; }
+          .stTabs [data-baseweb="tab"] { padding: 0 0 0.55rem; color: #6B7280; }
+          .stTabs [aria-selected="true"] { color: #1F2329; font-weight: 600; }
+          .st-key-phase, .st-key-phase [data-testid="stRadio"] { width: 100%; }
+          .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; width: 100%;
+            align-items: stretch; }
+          .st-key-phase [data-testid="stRadioGroup"] > * { background: #F3F4F6;
+            border-radius: 12px; padding: 0.55rem 0.75rem 0.6rem; margin: 0; width: 100%;
+            box-sizing: border-box; transition: background 120ms ease; }
+          .st-key-phase [data-testid="stRadioGroup"] > *:hover { background: #ECEEF1; }
+          .st-key-phase [data-testid="stRadioGroup"] > *:has(input:checked) {
+            background: #FFC93C; }
+          .st-key-phase [data-testid="stRadioGroup"] > *:active { transform: scale(0.985); }
+          .st-key-phase [data-testid="stRadioOption"] { margin: 0; cursor: pointer; }
+          .st-key-phase [data-testid="stRadioOption"] > div > div:not([data-testid]) {
+            display: none; }
+          .st-key-phase [data-testid="stRadioOption"] > div { gap: 0; }
+          .st-key-phase [data-testid="stRadioCaption"] { font-size: 0.68rem; opacity: 0.72; }
           .block-container { padding-top: 2.2rem !important; padding-bottom: 3rem !important;
             max-width: 1500px; }
           [data-testid="stVerticalBlock"] { gap: 0.75rem; }
@@ -323,34 +284,36 @@ if not IS_DARK:
           h1 { font-size: 1.6rem !important; }
           h2 { font-size: 1.22rem !important; margin: 0.2rem 0 0.1rem !important; }
           h3 { font-size: 1rem !important; margin: 0.6rem 0 0.1rem !important; }
-          /* No measure cap. A capped column leaves half of every card empty on a wide
-             screen, which is the thing that read as unfinished. Long prose now sits in
-             a column beside something else rather than being narrowed in place. */
           .stMarkdown p { font-size: 0.93rem; line-height: 1.5; max-width: none; }
-          hr { margin: 0.9rem 0 !important; }
           [data-testid="stMetricValue"] { font-size: 1.55rem; }
-          [data-testid="stMetricLabel"] { font-size: 0.72rem !important;
+          [data-testid="stMetricLabel"] { font-size: 0.72rem !important; opacity: 0.68;
             text-transform: uppercase; letter-spacing: 0.055em; }
-          /* Page header block inside its card. */
-          .pagehead .eyebrow { font-size: 0.68rem; letter-spacing: 0.1em;
-            text-transform: uppercase; opacity: 0.55; font-weight: 600; }
+          [data-testid="stAlertContainer"] { border-radius: 12px; border: 1px solid #E5E7EB;
+            border-left: 4px solid #B07D0A; background: #FFFFFF; }
+          [data-testid="stAlertContainer"] p { font-size: 0.9rem; }
+          .statband { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+            background: #E5E7EB; border: 1px solid #E5E7EB; border-radius: 14px;
+            overflow: hidden; }
+          .statband .bcell { background: #FFFFFF; padding: 0.8rem 1rem 0.85rem; }
+          .statband .bcell.hi { background: #FDF4E0; }
+          .statband .bcell span { display: block; font-size: 0.66rem; letter-spacing: 0.06em;
+            text-transform: uppercase; color: #6B7280; margin-bottom: 0.15rem; }
+          .statband .bcell b { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.025em; }
+          .pullq { background: #FDF4E0; border-left: 4px solid #B07D0A;
+            border-radius: 0 14px 14px 0; padding: 0.9rem 1.2rem; }
+          .pullq > b { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
+          .pullq p b { font-weight: 700; color: #1F2329; }
+          .pullq p { margin: 0; font-size: 0.88rem; color: #4B5563; }
+          .claim { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.025em;
+            line-height: 1.25; margin: 0.3rem 0 0.4rem; }
+          .claim em { font-style: normal; color: #B07D0A; }
+          .eyebrow { font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase;
+            color: #6B7280; font-weight: 600; }
+          .sublead { font-size: 0.88rem; color: #4B5563; margin: 0; }
           .pagehead h2 { margin: 0.1rem 0 0.15rem !important; font-size: 1.5rem !important;
             letter-spacing: -0.015em; }
           .pagehead .standing { font-size: 0.8rem; opacity: 0.6; margin: 0 0 0.5rem; }
           p.lead { font-size: 0.95rem; line-height: 1.55; max-width: none; margin: 0; }
-          /* Alerts become quiet panels with a rule, instead of three stock colours
-             competing with the palette. */
-          [data-testid="stAlertContainer"] { border-radius: 12px; border: 1px solid #E5E7EB;
-            border-left: 4px solid #B07D0A; background: #FFFFFF; }
-          [data-testid="stAlertContainer"] p { font-size: 0.9rem; }
-          [data-testid="stDataFrame"] { border: 1px solid #E5E7EB; }
-          /* Buttons are filled, not outlined: on a white card an outlined button reads
-             as another border rather than as something to press. */
-          [data-testid="stMain"] [data-testid="stBaseButton-secondary"] {
-            background: #FFC93C; border: none; color: #1F2329; font-weight: 600;
-            border-radius: 10px; }
-          [data-testid="stMain"] [data-testid="stBaseButton-secondary"]:hover {
-            background: #F0B82C; color: #1F2329; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -483,10 +446,17 @@ PHASE_PRELIM = "Preliminary"
 PHASE_MID = "Midterm"
 PHASE_FINAL = "Final"
 PHASES = [PHASE_HOME, PHASE_PRELIM, PHASE_MID, PHASE_FINAL]
-# The stage rides as a caption rather than inside the label. Streamlit renders it on its
-# own line under the option, which gives the nav the two-line card look without a CSS
-# hack, and keeps the label short enough to read as a title.
+# The stage rides as a caption rather than inside the label, which gives the nav its
+# two-line card without a CSS hack and keeps the label short enough to read as a title.
 PHASE_CAPTIONS = ["Overview", "Descriptive", "Diagnostic", "Predictive"]
+# Material icons rather than emoji: they inherit the text colour, so they go dark on the
+# selected yellow card instead of staying a fixed hue.
+PHASE_ICONS = {
+    PHASE_HOME: ":material/dashboard:",
+    PHASE_PRELIM: ":material/table_chart:",
+    PHASE_MID: ":material/troubleshoot:",
+    PHASE_FINAL: ":material/insights:",
+}
 
 MIN_TYPE_FILINGS = 100
 # An operator counts as a driver of a category's deficit only if it is large enough to
@@ -879,6 +849,7 @@ phase = st.sidebar.radio(
     "Phase",
     PHASES,
     captions=PHASE_CAPTIONS,
+    format_func=lambda p: f"{PHASE_ICONS[p]} {p}",
     key="phase",
     help="Home summarises all three phases. Preliminary describes the data, Midterm "
          "diagnoses what the compliance label measures, Final fits the model.",
@@ -940,14 +911,40 @@ filtered = (year_range[0], year_range[1]) != (years[0], years[-1])
 # ----------------------------------------------------------------------------
 # Forward-looking phases
 # ----------------------------------------------------------------------------
+def band(cells, highlight=None):
+    """A hairline-separated row of figures, read as one strip rather than four widgets."""
+    html = "<div class='statband'>"
+    for i, (label, value) in enumerate(cells):
+        hi = " hi" if i == highlight else ""
+        html += f"<div class='bcell{hi}'><span>{label}</span><b>{value}</b></div>"
+    st.markdown(html + "</div>", unsafe_allow_html=True)
+
+
+def _inline_md(text):
+    """Convert the markdown spans that do not survive inside a raw HTML block.
+
+    st.markdown with unsafe_allow_html=True does not parse markdown inside a block
+    element, so `**bold**` and `code` reach the browser as literal characters. Every
+    helper that emits its own HTML runs its text through this first.
+    """
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+
+
+def pull(headline, body):
+    """The sentence that changes how the numbers above it should be read."""
+    st.markdown(
+        f"<div class='pullq'><b>{_inline_md(headline)}</b>"
+        f"<p>{_inline_md(body)}</p></div>", unsafe_allow_html=True)
+
+
 def card():
     """A bordered container that CSS can actually find.
 
-    st.container(border=True) renders as a plain stVerticalBlock with a border; there
-    is no test id distinguishing it from every other block, and the emotion class that
-    does is regenerated between Streamlit versions. Dropping an empty marker inside and
-    selecting the block that :has() it is version-independent, which targeting the class
-    would not be.
+    st.container(border=True) renders as a plain stVerticalBlock with a border; there is
+    no test id distinguishing it from every other block, and the emotion class that does
+    is regenerated between Streamlit versions. Dropping an empty marker inside and
+    selecting the block that :has() it is version-independent.
     """
     c = st.container(border=True)
     c.markdown("<span class='cardmark'></span>", unsafe_allow_html=True)
@@ -955,14 +952,7 @@ def card():
 
 
 def _phase_header(title, standing, blurb):
-    """Compact page header: eyebrow, title, one line of standing, then the lead.
-
-    st.title renders at 2.1rem with a divider under it, which on a dashboard eats a
-    third of the first screen before a number appears. This is the same information at
-    a density the layout can afford: the stage as an eyebrow, the name as a heading,
-    the standing as one muted line, and the lead inside the card rather than floating
-    on the page.
-    """
+    """Eyebrow, title, standing, lead — across the card's width rather than down it."""
     stage, _, rest = title.partition(" — ")
     with card():
         left, right = st.columns([1, 2.1], gap="large")
@@ -973,10 +963,9 @@ def _phase_header(title, standing, blurb):
                 unsafe_allow_html=True,
             )
         with right:
-            # Wrapping the blurb in raw HTML stops Streamlit's markdown pass, so inline
-            # code spans arrived as literal backticks. Convert them here rather than
-            # dropping the wrapper, which is what carries the lead's type size.
-            lead = re.sub(r"`([^`]+)`", r"<code>\1</code>", blurb)
+            # Raw HTML bypasses Streamlit's markdown pass, so inline code spans would
+            # arrive as literal backticks.
+            lead = _inline_md(blurb)
             st.markdown(f"<p class='lead'>{lead}</p>", unsafe_allow_html=True)
 
 
@@ -1230,9 +1219,8 @@ def _headline_facts(_df, cache_key):
     out["attributable"] = (100 * (1 - out["fall_complete"] / out["fall_all"])
                            if out["fall_all"] else float("nan"))
 
-    # sizeBand, not ladbsBuildingCategory. The tab and the paper both report the size
-    # spread; the raw category splits city-owned tiers out separately and gives 30.2
-    # rather than 16.7, so using it here would contradict the page it summarises.
+    # sizeBand, not ladbsBuildingCategory: the Coverage Tier tab reports the spread
+    # across size bands, and the Home card must not contradict the tab it links to.
     tier_all = _df.groupby("sizeBand")["isCompliant"].mean() * 100
     tier_complete = complete.groupby("sizeBand")["isCompliant"].mean() * 100
     out["tier_spread_all"] = float(tier_all.max() - tier_all.min())
@@ -1262,30 +1250,51 @@ def _goto(target):
 def render_home(source_label):
     facts = _headline_facts(df, (source_label, len(df), int(df["programYear"].max())))
 
-    st.title("EBEWE Program — Building Compliance Analytics")
-    st.caption(
-        "City of Los Angeles, Department of Building and Safety. Every figure in this "
-        "application is recomputed from the loaded file; nothing is stored or hardcoded."
-    )
-
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Filings", f"{facts['filings']:,}")
-    k2.metric("Buildings", f"{facts['buildings']:,}")
-    k3.metric("Program years", f"{facts['first_year']}–{facts['last_year']}")
-    k4.metric("Structurally incomplete", f"{facts['incomplete_share']:.1f}%")
-
+    # Hero: the claim stated as a proportion before it is stated as a number. The filled
+    # share of the bar is the finding; the figure beside it only confirms it.
     with card():
-        st.markdown(
-            "**Who this is for.** The LADBS program analyst who plans EBEWE enforcement "
-            "and outreach each program year, and the program manager who reports "
-            "compliance performance to the City."
-        )
-        st.markdown(
-            "**The question this application answers.** The compliance field records two "
-            "unrelated events under one label — a building that reported and failed a "
-            "requirement, and a building whose report was never completed. No field "
-            "separates them. Each phase below answers one part of what follows from that."
-        )
+        hl, hr = st.columns([1.15, 1], gap="large")
+        with hl:
+            st.markdown(
+                "<span class='eyebrow'>The finding this dashboard exists for</span>"
+                f"<p class='claim'>{facts['incomplete_share']:.0f} per cent of filings are "
+                "marked NOT COMPLIED because the report was <em>never finished</em> — not "
+                "because the building failed.</p>"
+                "<p class='sublead'>Compliance and paperwork share one label. Each phase "
+                "below separates a different part of that mixture.</p>",
+                unsafe_allow_html=True,
+            )
+        with hr:
+            _inc = facts["incomplete_share"]
+            _w1 = 330 * _inc / 100
+            _w2 = 330 * facts["complete_rate"] / 100
+            st.markdown(
+                f"""<svg viewBox="0 0 330 150" width="100%" height="150" role="img"
+ aria-label="Of all filings, {_inc:.1f} per cent are structurally incomplete; among
+ complete filings {facts['complete_rate']:.2f} per cent are compliant.">
+<text x="2" y="14" font-size="10" fill="{SLATE}">ALL FILINGS · {facts['filings']:,}</text>
+<rect x="0" y="22" width="330" height="34" rx="6" fill="#E5E7EB"/>
+<rect x="0" y="22" width="{_w1:.0f}" height="34" rx="6" fill="{OCHRE}"/>
+<text x="9" y="44" font-size="12" fill="#FFFFFF" font-weight="600">{_inc:.1f}%</text>
+<text x="{_w1 + 12:.0f}" y="44" font-size="11" fill="{INK}">incomplete · {facts['n_incomplete']:,}</text>
+<text x="2" y="84" font-size="10" fill="{SLATE}">COMPLETE FILINGS · {facts['n_complete']:,}</text>
+<rect x="0" y="92" width="330" height="34" rx="6" fill="#E5E7EB"/>
+<rect x="0" y="92" width="{_w2:.0f}" height="34" rx="6" fill="{CIVIC}"/>
+<text x="9" y="114" font-size="12" fill="#FFFFFF" font-weight="600">{facts['complete_rate']:.2f}% compliant</text>
+</svg>""",
+                unsafe_allow_html=True,
+            )
+
+    band([
+        ("Filings", f"{facts['filings']:,}"),
+        ("Buildings", f"{facts['buildings']:,}"),
+        ("Program years", f"{facts['first_year']}\u2013{facts['last_year']}"),
+        ("Structurally incomplete", f"{facts['incomplete_share']:.1f}%"),
+    ], highlight=3)
+
+    pull("Who this is for",
+         "The LADBS program analyst who plans enforcement and outreach each program year, "
+         "and the program manager who reports compliance performance to the City.")
 
     st.divider()
     st.subheader("The three phases")
@@ -1321,8 +1330,7 @@ def render_home(source_label):
                 f"filing completeness is held constant\n"
                 f"- Across {facts['n_big_entities']} organisations the spread is "
                 f"**{facts['entity_spread']:.1f} points**, against "
-                f"**{facts['type_spread']:.1f}** across all property types with "
-                f"{MIN_TYPE_FILINGS}+ complete filings"
+                f"**{facts['type_spread']:.1f}** across property types"
             )
             st.caption("Tabs: Compliance Trend · Coverage Tier · Responsible Entity · Correlations")
             st.button("Open Midterm", key="go_mid", width="stretch",
@@ -1394,14 +1402,18 @@ def render_final(source_label):
         "direct a limited number of audits.",
     )
 
-    st.subheader("What the model is asked to do")
-    st.markdown(
-        f"Predict **NOT COMPLIED** among the **{res['n_train'] + res['n_test']:,}** "
-        f"complete filings. Trained on {res['n_train']:,} filings across "
-        f"{res['train_buildings']:,} buildings and tested on {res['n_test']:,} filings "
-        f"across {res['test_buildings']:,} buildings, split **by building** so no "
-        f"building appears on both sides. The test fold holds **{res['n_pos']:,}** "
-        f"non-compliant filings, a base rate of **{res['base_rate'] * 100:.2f}%**."
+    # The setup is five numbers, not a paragraph. The band states them once; the
+    # caption below carries only the part that is a design decision, not a figure.
+    band([
+        ("Modelled on", f"{res['n_train'] + res['n_test']:,} complete filings"),
+        ("Train", f"{res['n_train']:,} \u00b7 {res['train_buildings']:,} bldgs"),
+        ("Test", f"{res['n_test']:,} \u00b7 {res['test_buildings']:,} bldgs"),
+        ("Test base rate", f"{res['base_rate'] * 100:.2f}%"),
+    ], highlight=3)
+    st.caption(
+        f"Target: **NOT COMPLIED**. Split **by building**, so no building appears on both "
+        f"sides \u2014 a random row split would leak the same building's history into the test "
+        f"fold. The test fold holds {res['n_pos']:,} non-compliant filings."
     )
 
     st.subheader("Three models against the baseline")
@@ -1409,14 +1421,16 @@ def render_final(source_label):
         comp.style.format({c: "{:.4f}" for c in
                            ["Accuracy", "Precision", "Recall", "F1", "ROC-AUC", "PR-AUC"]}),
         width="stretch", hide_index=True)
-    st.warning(
-        f"**The baseline is accurate and useless.** Predicting COMPLIED for every filing "
+    pull(
+        "The baseline is accurate and useless",
+        f"Predicting COMPLIED for every filing "
         f"scores **{base['Accuracy'] * 100:.2f}%** accuracy and catches **none** of the "
         f"{int(base['Missed']):,} non-compliant filings — precision, recall and F1 are all "
         f"zero. Gradient boosting reaches **{gb['Accuracy'] * 100:.2f}%** accuracy, which "
         f"is barely higher, while catching **{int(gb['Caught']):,}** of them at "
         f"**{gb['Precision'] * 100:.1f}%** precision. Accuracy cannot tell those two apart, "
-        f"which is why PR-AUC — **{base['PR-AUC']:.4f}** against **{gb['PR-AUC']:.4f}** — "
+        f"which is why PR-AUC \u2014 **{base['PR-AUC']:.4f}** against "
+        f"**{gb['PR-AUC']:.4f}** \u2014 "
         f"carries the comparison instead."
     )
     st.caption(
@@ -1428,6 +1442,9 @@ def render_final(source_label):
 
     st.divider()
     st.subheader("What the model uses")
+    # Chart and reading sit side by side: the claim is about the chart, and a reader
+    # who has to scroll past the bars to reach it loses the comparison.
+    gl, gr = st.columns([1.35, 1], gap="large")
     imp = res["importance"].sort_values("AUC drop")
     fig = go.Figure(go.Bar(
         x=imp["AUC drop"], y=imp["Feature"], orientation="h",
@@ -1437,20 +1454,23 @@ def render_final(source_label):
         textposition="outside", cliponaxis=False))
     fig.update_layout(height=430, xaxis_title="ROC-AUC lost when the column is shuffled",
                       yaxis_title="", margin={"l": 10, "r": 60, "t": 10, "b": 40})
-    chart(fig)
+    with gl:
+        chart(fig)
     ent_auc = (1 - (nb["ROC-AUC"] - 0.5) / (gb["ROC-AUC"] - 0.5)) * 100
     ent_pr = (1 - (nb["PR-AUC"] - res["base_rate"]) / (gb["PR-AUC"] - res["base_rate"])) * 100
-    st.info(
-        f"**Who files, not what is filed.** Shuffling the responsible entity costs more "
-        f"ROC-AUC than every other column combined, and all property-type indicators "
-        f"together cost almost nothing. Refitting with the entity features withheld — the "
-        f"last row of the table above — drops ROC-AUC from **{gb['ROC-AUC']:.4f}** to "
-        f"**{nb['ROC-AUC']:.4f}** and PR-AUC from **{gb['PR-AUC']:.4f}** to "
-        f"**{nb['PR-AUC']:.4f}**. Measured above chance, the responsible entity accounts "
-        f"for **{ent_auc:.1f}%** of ROC-AUC and **{ent_pr:.1f}%** of PR-AUC. The model "
-        f"without it still beats random selection, so the building characteristics are not "
-        f"worthless — but it misses most of what the full model catches."
-    )
+    with gr:
+        st.info(
+            f"**Who files, not what is filed.** Shuffling the responsible entity costs more "
+            f"ROC-AUC than every other column combined, and all property-type indicators "
+            f"together cost almost nothing. Refitting with the entity features withheld \u2014 "
+            f"the last row of the table above \u2014 drops ROC-AUC from "
+            f"**{gb['ROC-AUC']:.4f}** to **{nb['ROC-AUC']:.4f}** and PR-AUC from "
+            f"**{gb['PR-AUC']:.4f}** to **{nb['PR-AUC']:.4f}**. Measured above chance, the "
+            f"responsible entity accounts for **{ent_auc:.1f}%** of ROC-AUC and "
+            f"**{ent_pr:.1f}%** of PR-AUC. The model without it still beats random "
+            f"selection, so the building characteristics are not worthless \u2014 but it "
+            f"misses most of what the full model catches."
+        )
 
     st.divider()
     st.subheader("The review list")
@@ -1460,25 +1480,33 @@ def render_final(source_label):
         "capacity available, so the page reports what a review list of a given size "
         "would contain."
     )
-    cap = st.slider("Filings the analyst can review", min_value=50,
-                    max_value=min(2000, res["n_test"]), value=250, step=50)
-    order = np.argsort(-res["proba"])
-    hits = int(res["y_test"][order[:cap]].sum())
-    m1_, m2_, m3_ = st.columns(3)
-    m1_.metric("Non-compliant found", f"{hits:,}")
-    m2_.metric("Hit rate", f"{hits / cap * 100:.1f}%",
-               delta=f"{hits / cap * 100 - res['base_rate'] * 100:+.1f} pts vs random")
-    m3_.metric("Share of all non-compliant", f"{hits / res['n_pos'] * 100:.1f}%")
-    st.dataframe(res["ranked"].head(cap).style.format({"risk": "{:.3f}"}),
-                 width="stretch", hide_index=True, height=360)
-    st.caption(
-        f"Ranked by predicted risk on the held-out fold. Reviewing {cap:,} filings at "
-        f"random would be expected to find about {cap * res['base_rate']:.0f}."
-    )
+    # Control and consequence on the left, the list itself on the right: the reader
+    # moves the slider and watches three numbers, not a table reflowing under them.
+    cl, cr = st.columns([1, 2.15], gap="large")
+    with cl:
+        with card():
+            cap = st.slider("Filings the analyst can review", min_value=50,
+                            max_value=min(2000, res["n_test"]), value=250, step=50)
+            order = np.argsort(-res["proba"])
+            hits = int(res["y_test"][order[:cap]].sum())
+            st.metric("Non-compliant found", f"{hits:,}")
+            st.metric("Hit rate", f"{hits / cap * 100:.1f}%",
+                      delta=f"{hits / cap * 100 - res['base_rate'] * 100:+.1f} pts vs random")
+            st.metric("Share of all non-compliant", f"{hits / res['n_pos'] * 100:.1f}%")
+            st.caption(
+                f"Reviewing {cap:,} filings at random would be expected to find about "
+                f"{cap * res['base_rate']:.0f}."
+            )
+    with cr:
+        st.dataframe(res["ranked"].head(cap).style.format({"risk": "{:.3f}"}),
+                     width="stretch", hide_index=True, height=430)
+        st.caption("Ranked by predicted risk on the held-out fold.")
 
     st.divider()
     st.subheader("What this does not settle")
-    st.markdown(
+    # Five caveats read as a wall in one column. Two columns of cards let the reader
+    # take them one at a time without losing the sense that the list is finite.
+    _lim_left = (
         f"- **Cost-benefit ranking is out of reach.** No penalty, enforcement or retrofit "
         f"cost appears in the published columns, so the model can rank by risk but not by "
         f"expected value. Importing external cost figures would import assumptions with a "
@@ -1487,7 +1515,9 @@ def render_final(source_label):
         f"date, so nothing here says when in a cycle an intervention would land.\n"
         f"- **Exempt buildings are indistinguishable from delinquent ones.** The ordinance "
         f"exempts unoccupied and mid-demolition buildings; neither is recorded. That places "
-        f"a ceiling on recall no model can cross.\n"
+        f"a ceiling on recall no model can cross."
+    )
+    _lim_right = (
         f"- **Program year carries a confound.** It is the second most important feature, "
         f"but it absorbs both the policy regime — including the 2019–2021 deadline "
         f"suspension — and the roster growth as the ordinance phased in. It is not a causal "
@@ -1497,6 +1527,13 @@ def render_final(source_label):
         f"no entity signal for roughly one filing in "
         f"{max(1, round(1 / max(res['unseen_entity_share'], 1e-9))):.0f}."
     )
+    ll, lr = st.columns(2, gap="large")
+    with ll:
+        with card():
+            st.markdown(_lim_left)
+    with lr:
+        with card():
+            st.markdown(_lim_right)
 
 
 # ----------------------------------------------------------------------------
@@ -1516,10 +1553,9 @@ if phase == PHASE_FINAL:
 # ----------------------------------------------------------------------------
 # Shared header — Preliminary and Midterm
 # ----------------------------------------------------------------------------
-# No KPI row here. Home already states the dataset-level figures, and repeating the
-# same four tiles on every phase is a row of numbers that answers no question the phase
-# is asking. The filter notice below covers the one case where the active selection
-# changes what the page is showing.
+# No KPI row here. Home states the dataset-level figures, and repeating the same four
+# tiles on every phase answers no question the phase is asking. The filter notice below
+# covers the one case where the active selection changes what the page shows.
 
 if filtered:
     st.warning(
@@ -1554,6 +1590,17 @@ if phase == PHASE_PRELIM:
         "explains compliance — that is the Midterm — but nothing in the Midterm is "
         "trustworthy without it.",
     )
+    # The band restates nothing from Home: these are properties of the file in view
+    # (the year filter applies), which is what the three tabs below are about.
+    _n_null_cols = int((diag["missing_report"]["Missing %"] > 0).sum())
+    band([
+        ("Rows in view", f"{len(dff):,}"),
+        # The sidebar reports the as-loaded width; this is the width after the
+        # engineered columns are added, so the label has to say which one it is.
+        ("Columns after engineering", f"{dff.shape[1]}"),
+        ("Columns with nulls", f"{_n_null_cols} of {dff.shape[1]}"),
+        ("Structurally incomplete", f"{dff['isIncompleteFiling'].mean() * 100:.1f}%"),
+    ], highlight=2)
     tabs = st.tabs([
         "Data Quality",
         "Descriptive Stats",
@@ -2039,6 +2086,20 @@ else:
         f"completeness is held constant — and then asks what does separate compliance "
         f"when filing behaviour is taken out of the way.",
     )
+    # The band is the diagnostic claim in four numbers: the reported fall, the fall
+    # that survives the control, the share that was filing behaviour, and the rival
+    # explanation that does survive it.
+    _attrib = (100 * (1 - _cm_drop / _ov_drop)) if _ov_drop else float("nan")
+    _ent = dff_complete[dff_complete["entityResponsible"] != "UNKNOWN"]
+    _ec = _ent.groupby("entityResponsible")["isCompliant"].agg(["mean", "size"])
+    _ec = _ec[_ec["size"] >= MIN_TYPE_FILINGS]
+    band([
+        ("Reported fall", f"{_ov_drop:.1f} pts"),
+        ("Fall among complete filings", f"{_cm_drop:.1f} pts"),
+        ("Attributable to filing", f"{_attrib:.0f}%"),
+        ("Spread across organisations",
+         f"{(_ec['mean'].max() - _ec['mean'].min()) * 100:.1f} pts" if len(_ec) else "n/a"),
+    ], highlight=3)
     tabs = st.tabs([
         "Compliance Trend",
         "Coverage Tier",
@@ -2074,14 +2135,9 @@ else:
         )
 
         if len(yearly_overall) >= 2:
-            drop_overall, drop_complete = _ov_drop, _cm_drop
-            share = (1 - drop_complete / drop_overall) * 100 if drop_overall else np.nan
-            c1, c2, c3 = st.columns(3)
-            c1.metric(f"Overall decline, {yearly_overall.index[0]}–{yearly_overall.index[-1]}",
-                      f"{drop_overall:.1f} pts")
-            c2.metric("Decline, complete filings only", f"{drop_complete:.1f} pts")
-            c3.metric("Share attributable to filing completeness",
-                      f"{share:.0f}%" if pd.notna(share) else "n/a")
+            # The three figures this tab would otherwise tile here are already in the
+            # band above the tabs, which stays on screen. Repeating them is the
+            # redundancy, not the restatement of the caveat that follows.
             st.warning(
                 "**These are endpoint figures and they overstate their own precision.** The "
                 "building roster is not constant — the ordinance phased in by size, so early "
