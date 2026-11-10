@@ -259,27 +259,26 @@ if not IS_DARK:
           .stTabs [data-baseweb="tab"] { padding: 0 0 0.55rem; color: #6B7280; }
           .stTabs [aria-selected="true"] { color: #1F2329; font-weight: 600; }
           /* Phase nav. Each option becomes a card on the page grey; the selected one
-             takes the bright yellow, which is a filled shape and so can carry it. The
-             radio dot itself goes: the fill already says which is current, and two
-             signals for one state is noise. */
-          section[data-testid="stSidebar"] [role="radiogroup"] { gap: 0.45rem; }
-          section[data-testid="stSidebar"] [role="radiogroup"] > label {
-            background: #F3F4F6; border-radius: 12px; padding: 0.6rem 0.8rem;
+             takes the bright yellow, which is a filled shape and so can carry it.
+             stRadioOption and stRadioGroup are Streamlit's own hooks — an earlier
+             version targeted [role="radiogroup"] > label, which matches nothing. */
+          section[data-testid="stSidebar"] [data-testid="stRadioGroup"] { gap: 0.4rem; }
+          section[data-testid="stSidebar"] [data-testid="stRadioOption"] {
+            background: #F3F4F6; border-radius: 12px; padding: 0.55rem 0.7rem;
             margin: 0; width: 100%; transition: background 120ms ease; }
-          section[data-testid="stSidebar"] [role="radiogroup"] > label:hover {
+          section[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover {
             background: #ECEEF1; }
-          section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) {
+          section[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked) {
             background: #FFC93C; }
-          section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked)
-            [data-testid="stCaptionContainer"] p { color: rgba(31,35,41,.68); }
-          section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child {
-            display: none; }
-          /* Caption above the label rather than below, so each card reads stage-then-name
-             like a section marker. */
-          section[data-testid="stSidebar"] [role="radiogroup"] > label > div:last-child {
-            display: flex; flex-direction: column-reverse; gap: 0.05rem; }
-          section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
-            font-size: 0.68rem; margin: 0; }
+          section[data-testid="stSidebar"] [data-testid="stRadioCaption"] {
+            font-size: 0.68rem; opacity: 0.72; }
+          /* The tab block is the card. Wrapping every tab body in a container would mean
+             re-indenting a thousand lines; styling the wrapper Streamlit already emits
+             puts all of that content on a white panel for four rules. */
+          [data-testid="stTabs"] { background: #FFFFFF; border: 1px solid #E5E7EB;
+            border-radius: 16px; padding: 1.1rem 1.3rem 1.3rem;
+            box-shadow: 0 1px 2px rgba(31,35,41,.05); }
+          [data-testid="stTabs"] [data-testid="stMetric"] { background: #F3F4F6; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1412,11 +1411,12 @@ if phase == PHASE_FINAL:
 # ----------------------------------------------------------------------------
 # Shared header — Preliminary and Midterm
 # ----------------------------------------------------------------------------
-_k1, _k2, _k3, _k4 = st.columns(4)
-_k1.metric("Filings", f"{len(dff):,}")
-_k2.metric("Compliance rate", f"{dff['isCompliant'].mean() * 100:.1f}%")
-_k3.metric("Incomplete filings", f"{dff['isIncompleteFiling'].mean() * 100:.1f}%")
-_k4.metric("Median Site EUI (kBtu/ft²)", f"{dff['siteEui'].median():,.1f}")
+with st.container(border=True):
+    _k1, _k2, _k3, _k4 = st.columns(4)
+    _k1.metric("Filings", f"{len(dff):,}")
+    _k2.metric("Compliance rate", f"{dff['isCompliant'].mean() * 100:.1f}%")
+    _k3.metric("Incomplete filings", f"{dff['isIncompleteFiling'].mean() * 100:.1f}%")
+    _k4.metric("Median Site EUI (kBtu/ft²)", f"{dff['siteEui'].median():,.1f}")
 
 if filtered:
     st.warning(
