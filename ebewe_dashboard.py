@@ -158,8 +158,8 @@ st.markdown(
       /* Measure by role, not one rule for everything. Narrative prose keeps a reading
          measure; captions sit under the thing they describe and take its width; callouts
          run wider than prose but not edge to edge. */
-      .stMarkdown p { max-width: 74ch; line-height: 1.55; }
-      .stAlert p { max-width: 104ch; line-height: 1.5; }
+      .stMarkdown p { max-width: none; line-height: 1.55; }
+      .stAlert p { max-width: none; line-height: 1.5; }
       [data-testid="stCaptionContainer"] p,
       [data-testid="stCaptionContainer"] { max-width: none; line-height: 1.5; }
       [data-testid="stCaptionContainer"] { opacity: 0.72; font-size: 0.86rem; }
@@ -278,18 +278,31 @@ if not IS_DARK:
              takes the bright yellow, which is a filled shape and so can carry it.
              stRadioOption and stRadioGroup are Streamlit's own hooks — an earlier
              version targeted [role="radiogroup"] > label, which matches nothing. */
-          .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; }
+          /* The group shrank to its longest label, so the cards were 112px inside a
+             230px sidebar. Stretching the group is what makes them one width. */
+          .st-key-phase, .st-key-phase [data-testid="stRadio"] { width: 100%; }
+          .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; width: 100%;
+            align-items: stretch; }
           /* The card is the group's direct child, not stRadioOption: Streamlit renders
              the option and its caption as siblings inside that child, so styling the
              option alone leaves the caption outside the card. */
           .st-key-phase [data-testid="stRadioGroup"] > * {
-            background: #F3F4F6; border-radius: 12px; padding: 0.5rem 0.7rem 0.55rem;
-            margin: 0; width: 100%; transition: background 120ms ease; }
+            background: #F3F4F6; border-radius: 12px; padding: 0.55rem 0.75rem 0.6rem;
+            margin: 0; width: 100%; box-sizing: border-box;
+            transition: background 120ms ease; }
           .st-key-phase [data-testid="stRadioGroup"] > *:hover {
             background: #ECEEF1; }
           .st-key-phase [data-testid="stRadioGroup"] > *:has(input:checked) {
             background: #FFC93C; }
-          .st-key-phase [data-testid="stRadioOption"] { margin: 0; }
+          .st-key-phase [data-testid="stRadioOption"] { margin: 0; cursor: pointer; }
+          /* The dot goes. It is the one child of the option row without a test id — the
+             other is the label's markdown container. With the whole card filled on
+             selection the dot is a second signal for one state, and it is what makes the
+             nav read as a form control rather than as something to press. */
+          .st-key-phase [data-testid="stRadioOption"] > div > div:not([data-testid]) {
+            display: none; }
+          .st-key-phase [data-testid="stRadioOption"] > div { gap: 0; }
+          .st-key-phase [data-testid="stRadioGroup"] > *:active { transform: scale(0.985); }
           .st-key-phase [data-testid="stRadioCaption"] {
             font-size: 0.68rem; opacity: 0.72; }
           /* The tab block is the card. Wrapping every tab body in a container would mean
@@ -310,7 +323,10 @@ if not IS_DARK:
           h1 { font-size: 1.6rem !important; }
           h2 { font-size: 1.22rem !important; margin: 0.2rem 0 0.1rem !important; }
           h3 { font-size: 1rem !important; margin: 0.6rem 0 0.1rem !important; }
-          .stMarkdown p { font-size: 0.93rem; line-height: 1.5; max-width: 86ch; }
+          /* No measure cap. A capped column leaves half of every card empty on a wide
+             screen, which is the thing that read as unfinished. Long prose now sits in
+             a column beside something else rather than being narrowed in place. */
+          .stMarkdown p { font-size: 0.93rem; line-height: 1.5; max-width: none; }
           hr { margin: 0.9rem 0 !important; }
           [data-testid="stMetricValue"] { font-size: 1.55rem; }
           [data-testid="stMetricLabel"] { font-size: 0.72rem !important;
@@ -321,7 +337,7 @@ if not IS_DARK:
           .pagehead h2 { margin: 0.1rem 0 0.15rem !important; font-size: 1.5rem !important;
             letter-spacing: -0.015em; }
           .pagehead .standing { font-size: 0.8rem; opacity: 0.6; margin: 0 0 0.5rem; }
-          p.lead { font-size: 0.95rem; line-height: 1.55; max-width: 86ch; margin: 0; }
+          p.lead { font-size: 0.95rem; line-height: 1.55; max-width: none; margin: 0; }
           /* Alerts become quiet panels with a rule, instead of three stock colours
              competing with the palette. */
           [data-testid="stAlertContainer"] { border-radius: 12px; border: 1px solid #E5E7EB;
@@ -949,12 +965,19 @@ def _phase_header(title, standing, blurb):
     """
     stage, _, rest = title.partition(" — ")
     with card():
-        st.markdown(
-            f"<div class='pagehead'><span class='eyebrow'>{rest.upper() or 'OVERVIEW'}</span>"
-            f"<h2>{stage}</h2><p class='standing'>{standing}</p></div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(f"<p class='lead'>{blurb}</p>", unsafe_allow_html=True)
+        left, right = st.columns([1, 2.1], gap="large")
+        with left:
+            st.markdown(
+                f"<div class='pagehead'><span class='eyebrow'>{rest.upper() or 'OVERVIEW'}"
+                f"</span><h2>{stage}</h2><p class='standing'>{standing}</p></div>",
+                unsafe_allow_html=True,
+            )
+        with right:
+            # Wrapping the blurb in raw HTML stops Streamlit's markdown pass, so inline
+            # code spans arrived as literal backticks. Convert them here rather than
+            # dropping the wrapper, which is what carries the lead's type size.
+            lead = re.sub(r"`([^`]+)`", r"<code>\1</code>", blurb)
+            st.markdown(f"<p class='lead'>{lead}</p>", unsafe_allow_html=True)
 
 
 
@@ -1493,12 +1516,10 @@ if phase == PHASE_FINAL:
 # ----------------------------------------------------------------------------
 # Shared header — Preliminary and Midterm
 # ----------------------------------------------------------------------------
-with card():
-    _k1, _k2, _k3, _k4 = st.columns(4)
-    _k1.metric("Filings", f"{len(dff):,}")
-    _k2.metric("Compliance rate", f"{dff['isCompliant'].mean() * 100:.1f}%")
-    _k3.metric("Incomplete filings", f"{dff['isIncompleteFiling'].mean() * 100:.1f}%")
-    _k4.metric("Median Site EUI (kBtu/ft²)", f"{dff['siteEui'].median():,.1f}")
+# No KPI row here. Home already states the dataset-level figures, and repeating the
+# same four tiles on every phase is a row of numbers that answers no question the phase
+# is asking. The filter notice below covers the one case where the active selection
+# changes what the page is showing.
 
 if filtered:
     st.warning(
