@@ -255,6 +255,31 @@ if not IS_DARK:
           /* The active tab carries the amber, not the bright yellow: an underline is a
              thin mark and the bright one would vanish against white. */
           .stTabs [data-baseweb="tab-highlight"] { background-color: #B07D0A; }
+          .stTabs [data-baseweb="tab-list"] { gap: 1.4rem; border-bottom: 1px solid #E5E7EB; }
+          .stTabs [data-baseweb="tab"] { padding: 0 0 0.55rem; color: #6B7280; }
+          .stTabs [aria-selected="true"] { color: #1F2329; font-weight: 600; }
+          /* Phase nav. Each option becomes a card on the page grey; the selected one
+             takes the bright yellow, which is a filled shape and so can carry it. The
+             radio dot itself goes: the fill already says which is current, and two
+             signals for one state is noise. */
+          section[data-testid="stSidebar"] [role="radiogroup"] { gap: 0.45rem; }
+          section[data-testid="stSidebar"] [role="radiogroup"] > label {
+            background: #F3F4F6; border-radius: 12px; padding: 0.6rem 0.8rem;
+            margin: 0; width: 100%; transition: background 120ms ease; }
+          section[data-testid="stSidebar"] [role="radiogroup"] > label:hover {
+            background: #ECEEF1; }
+          section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) {
+            background: #FFC93C; }
+          section[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked)
+            [data-testid="stCaptionContainer"] p { color: rgba(31,35,41,.68); }
+          section[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child {
+            display: none; }
+          /* Caption above the label rather than below, so each card reads stage-then-name
+             like a section marker. */
+          section[data-testid="stSidebar"] [role="radiogroup"] > label > div:last-child {
+            display: flex; flex-direction: column-reverse; gap: 0.05rem; }
+          section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+            font-size: 0.68rem; margin: 0; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -383,10 +408,14 @@ MIN_PLAUSIBLE_AREA = 1000
 # A property-type rate computed on a handful of filings is noise, not a segment
 # finding. Types below this are charted but excluded from spread and flagging.
 PHASE_HOME = "Home"
-PHASE_PRELIM = "Preliminary — descriptive"
-PHASE_MID = "Midterm — diagnostic"
-PHASE_FINAL = "Final — predictive"
+PHASE_PRELIM = "Preliminary"
+PHASE_MID = "Midterm"
+PHASE_FINAL = "Final"
 PHASES = [PHASE_HOME, PHASE_PRELIM, PHASE_MID, PHASE_FINAL]
+# The stage rides as a caption rather than inside the label. Streamlit renders it on its
+# own line under the option, which gives the nav the two-line card look without a CSS
+# hack, and keeps the label short enough to read as a title.
+PHASE_CAPTIONS = ["Overview", "Descriptive", "Diagnostic", "Predictive"]
 
 MIN_TYPE_FILINGS = 100
 # An operator counts as a driver of a category's deficit only if it is large enough to
@@ -778,6 +807,7 @@ df, diag = load_and_clean(raw_bytes)
 phase = st.sidebar.radio(
     "Phase",
     PHASES,
+    captions=PHASE_CAPTIONS,
     key="phase",
     help="Home summarises all three phases. Preliminary describes the data, Midterm "
          "diagnoses what the compliance label measures, Final fits the model.",
