@@ -239,12 +239,28 @@ if not IS_DARK:
           .stApp { background-color: #F3F4F6; }
           section[data-testid="stSidebar"] { background-color: #FFFFFF;
             border-right: 1px solid #E5E7EB; }
-          /* Cards. st.container(border=True) is the unit this app composes with, so it
-             gets the white fill, the soft corner and a shadow light enough to read as
-             lift rather than as a drop shadow. */
-          [data-testid="stVerticalBlockBorderWrapper"] { background: #FFFFFF;
-            border-radius: 16px; border: 1px solid #E5E7EB;
-            box-shadow: 0 1px 2px rgba(31,35,41,.05); }
+          /* Cards, found by their marker rather than by a class Streamlit regenerates. */
+          [data-testid="stElementContainer"]:has(> div > div > .cardmark) { display: none; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
+            background: #FFFFFF; border: 1px solid #E5E7EB !important; border-radius: 16px;
+            padding: 1.1rem 1.3rem 1.2rem; box-shadow: 0 1px 2px rgba(31,35,41,.05); }
+          /* Cards in a row match heights, and whatever action they end with sits on a
+             common baseline. Without this each card is as tall as its own text, so three
+             summaries of different lengths put three buttons at three heights — the
+             content decides the layout instead of the layout holding the content. */
+          [data-testid="stHorizontalBlock"] { align-items: stretch; }
+          [data-testid="stColumn"] > [data-testid="stVerticalBlock"] { height: 100%; }
+          /* Streamlit puts a layout wrapper between the column and the card, and it does
+             not stretch on its own, so the column matches its neighbours while the card
+             inside stays as tall as its own text. */
+          [data-testid="stColumn"] [data-testid="stLayoutWrapper"] { flex: 1 1 auto;
+            height: 100%; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
+            display: flex; flex-direction: column; height: 100%; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark)
+            > [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
+            margin-top: auto; padding-top: 0.6rem; }
+          [data-testid="stButton"] button { width: 100%; }
           /* Metric tiles sit inside cards, so they take the page grey rather than white —
              a white tile on a white card has nothing to sit against. */
           [data-testid="stMetric"] { background: #F3F4F6; border-radius: 12px;
@@ -262,15 +278,19 @@ if not IS_DARK:
              takes the bright yellow, which is a filled shape and so can carry it.
              stRadioOption and stRadioGroup are Streamlit's own hooks — an earlier
              version targeted [role="radiogroup"] > label, which matches nothing. */
-          section[data-testid="stSidebar"] [data-testid="stRadioGroup"] { gap: 0.4rem; }
-          section[data-testid="stSidebar"] [data-testid="stRadioOption"] {
-            background: #F3F4F6; border-radius: 12px; padding: 0.55rem 0.7rem;
+          .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; }
+          /* The card is the group's direct child, not stRadioOption: Streamlit renders
+             the option and its caption as siblings inside that child, so styling the
+             option alone leaves the caption outside the card. */
+          .st-key-phase [data-testid="stRadioGroup"] > * {
+            background: #F3F4F6; border-radius: 12px; padding: 0.5rem 0.7rem 0.55rem;
             margin: 0; width: 100%; transition: background 120ms ease; }
-          section[data-testid="stSidebar"] [data-testid="stRadioOption"]:hover {
+          .st-key-phase [data-testid="stRadioGroup"] > *:hover {
             background: #ECEEF1; }
-          section[data-testid="stSidebar"] [data-testid="stRadioOption"]:has(input:checked) {
+          .st-key-phase [data-testid="stRadioGroup"] > *:has(input:checked) {
             background: #FFC93C; }
-          section[data-testid="stSidebar"] [data-testid="stRadioCaption"] {
+          .st-key-phase [data-testid="stRadioOption"] { margin: 0; }
+          .st-key-phase [data-testid="stRadioCaption"] {
             font-size: 0.68rem; opacity: 0.72; }
           /* The tab block is the card. Wrapping every tab body in a container would mean
              re-indenting a thousand lines; styling the wrapper Streamlit already emits
@@ -279,6 +299,42 @@ if not IS_DARK:
             border-radius: 16px; padding: 1.1rem 1.3rem 1.3rem;
             box-shadow: 0 1px 2px rgba(31,35,41,.05); }
           [data-testid="stTabs"] [data-testid="stMetric"] { background: #F3F4F6; }
+          /* Density. Streamlit's defaults are built for a document; this is a
+             dashboard, so the vertical rhythm is roughly halved and the type scale
+             comes down a step. Nothing is removed — the same content simply stops
+             spending a third of the first screen before showing a number. */
+          .block-container { padding-top: 2.2rem !important; padding-bottom: 3rem !important;
+            max-width: 1500px; }
+          [data-testid="stVerticalBlock"] { gap: 0.75rem; }
+          [data-testid="stTabs"] [data-testid="stVerticalBlock"] { gap: 0.6rem; }
+          h1 { font-size: 1.6rem !important; }
+          h2 { font-size: 1.22rem !important; margin: 0.2rem 0 0.1rem !important; }
+          h3 { font-size: 1rem !important; margin: 0.6rem 0 0.1rem !important; }
+          .stMarkdown p { font-size: 0.93rem; line-height: 1.5; max-width: 86ch; }
+          hr { margin: 0.9rem 0 !important; }
+          [data-testid="stMetricValue"] { font-size: 1.55rem; }
+          [data-testid="stMetricLabel"] { font-size: 0.72rem !important;
+            text-transform: uppercase; letter-spacing: 0.055em; }
+          /* Page header block inside its card. */
+          .pagehead .eyebrow { font-size: 0.68rem; letter-spacing: 0.1em;
+            text-transform: uppercase; opacity: 0.55; font-weight: 600; }
+          .pagehead h2 { margin: 0.1rem 0 0.15rem !important; font-size: 1.5rem !important;
+            letter-spacing: -0.015em; }
+          .pagehead .standing { font-size: 0.8rem; opacity: 0.6; margin: 0 0 0.5rem; }
+          p.lead { font-size: 0.95rem; line-height: 1.55; max-width: 86ch; margin: 0; }
+          /* Alerts become quiet panels with a rule, instead of three stock colours
+             competing with the palette. */
+          [data-testid="stAlertContainer"] { border-radius: 12px; border: 1px solid #E5E7EB;
+            border-left: 4px solid #B07D0A; background: #FFFFFF; }
+          [data-testid="stAlertContainer"] p { font-size: 0.9rem; }
+          [data-testid="stDataFrame"] { border: 1px solid #E5E7EB; }
+          /* Buttons are filled, not outlined: on a white card an outlined button reads
+             as another border rather than as something to press. */
+          [data-testid="stMain"] [data-testid="stBaseButton-secondary"] {
+            background: #FFC93C; border: none; color: #1F2329; font-weight: 600;
+            border-radius: 10px; }
+          [data-testid="stMain"] [data-testid="stBaseButton-secondary"]:hover {
+            background: #F0B82C; color: #1F2329; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -868,11 +924,37 @@ filtered = (year_range[0], year_range[1]) != (years[0], years[-1])
 # ----------------------------------------------------------------------------
 # Forward-looking phases
 # ----------------------------------------------------------------------------
+def card():
+    """A bordered container that CSS can actually find.
+
+    st.container(border=True) renders as a plain stVerticalBlock with a border; there
+    is no test id distinguishing it from every other block, and the emotion class that
+    does is regenerated between Streamlit versions. Dropping an empty marker inside and
+    selecting the block that :has() it is version-independent, which targeting the class
+    would not be.
+    """
+    c = st.container(border=True)
+    c.markdown("<span class='cardmark'></span>", unsafe_allow_html=True)
+    return c
+
+
 def _phase_header(title, standing, blurb):
-    st.title(title)
-    st.caption(standing)
-    st.markdown(blurb)
-    st.divider()
+    """Compact page header: eyebrow, title, one line of standing, then the lead.
+
+    st.title renders at 2.1rem with a divider under it, which on a dashboard eats a
+    third of the first screen before a number appears. This is the same information at
+    a density the layout can afford: the stage as an eyebrow, the name as a heading,
+    the standing as one muted line, and the lead inside the card rather than floating
+    on the page.
+    """
+    stage, _, rest = title.partition(" — ")
+    with card():
+        st.markdown(
+            f"<div class='pagehead'><span class='eyebrow'>{rest.upper() or 'OVERVIEW'}</span>"
+            f"<h2>{stage}</h2><p class='standing'>{standing}</p></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"<p class='lead'>{blurb}</p>", unsafe_allow_html=True)
 
 
 
@@ -1169,7 +1251,7 @@ def render_home(source_label):
     k3.metric("Program years", f"{facts['first_year']}–{facts['last_year']}")
     k4.metric("Structurally incomplete", f"{facts['incomplete_share']:.1f}%")
 
-    with st.container(border=True):
+    with card():
         st.markdown(
             "**Who this is for.** The LADBS program analyst who plans EBEWE enforcement "
             "and outreach each program year, and the program manager who reports "
@@ -1191,7 +1273,7 @@ def render_home(source_label):
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        with st.container(border=True):
+        with card():
             st.markdown("#### Preliminary — descriptive")
             st.markdown("*What does the dataset contain, and what is wrong with it?*")
             st.markdown(
@@ -1205,7 +1287,7 @@ def render_home(source_label):
             st.button("Open Preliminary", key="go_prelim", width="stretch",
                       on_click=_goto, args=(PHASE_PRELIM,))
     with c2:
-        with st.container(border=True):
+        with card():
             st.markdown("#### Midterm — diagnostic")
             st.markdown("*Is compliance falling, and what actually separates it?*")
             st.markdown(
@@ -1223,7 +1305,7 @@ def render_home(source_label):
             st.button("Open Midterm", key="go_mid", width="stretch",
                       on_click=_goto, args=(PHASE_MID,))
     with c3:
-        with st.container(border=True):
+        with card():
             st.markdown("#### Final — predictive")
             st.markdown("*Can non-compliance be predicted well enough to target audits?*")
             st.markdown(
@@ -1411,7 +1493,7 @@ if phase == PHASE_FINAL:
 # ----------------------------------------------------------------------------
 # Shared header — Preliminary and Midterm
 # ----------------------------------------------------------------------------
-with st.container(border=True):
+with card():
     _k1, _k2, _k3, _k4 = st.columns(4)
     _k1.metric("Filings", f"{len(dff):,}")
     _k2.metric("Compliance rate", f"{dff['isCompliant'].mean() * 100:.1f}%")
