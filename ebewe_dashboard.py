@@ -69,36 +69,43 @@ except Exception:          # older Streamlit, or no theme information available
     _THEME = "light"
 IS_DARK = _THEME == "dark"
 
+# One hue family, not two. The neutrals were cool blue-greys (hue 216-220 degrees)
+# while the accent is warm gold (42 degrees), so any chart putting a neutral series
+# beside a gold one showed two unrelated palettes. The neutrals below are the same
+# lightnesses pulled into the gold family at very low saturation (32-43 degrees), so
+# grey-for-context and gold-for-focus read as one system.
 if IS_DARK:
-    INK = "#ECEEF1"        # text, axes, reference lines; also the second data series
-    SLATE = "#9BA2AD"      # secondary text; the default for any non-focal series
-    CIVIC = "#AEB6C2"      # the measured quantity; COMPLIED
-    OCHRE = "#E0A93B"      # the contrasting state: NOT COMPLIED, incomplete, below threshold
+    INK = "#F0EDE8"        # text, axes, reference lines
+    SLATE = "#A49B91"      # secondary text
+    CONTEXT = "#7E766D"    # any non-focal series; the measured quantity, COMPLIED
+    OCHRE = "#E8B74F"      # the focal state: NOT COMPLIED, incomplete, below threshold
     YELLOW = "#FFC93C"     # interface state only — selected, buttons, pills. Never a mark.
-    TIER_SEQUENCE = ["#F0DCA8", "#E0A93B", "#B07D0A", "#7A5A09", "#4A3607"]
+    # Validated dark: monotone lightness, adjacent dL >= 0.06, light end 2.07:1, 8 deg spread.
+    TIER_SEQUENCE = ["#F0DCA8", "#D0A338", "#B4871F", "#8C6610", "#64490B"]
 else:
-    INK = "#1F2329"
-    SLATE = "#6B7280"
-    CIVIC = "#39414D"
+    INK = "#23201C"
+    SLATE = "#7A736A"
+    CONTEXT = "#474038"
     OCHRE = "#B07D0A"
     # Two yellows, because one cannot do both jobs. #FFC93C is what makes the interface
     # feel like itself, and it works on buttons and selected rows because they are large
     # filled shapes. As a chart line on white it measures 1.54:1 and disappears. OCHRE is
     # the same hue darkened to 3.63:1, so a line or a small marker still reads.
     YELLOW = "#FFC93C"
-    # Ordered steps for charts that need more than two categories (the per-tier series).
-    # Sequential in lightness so they stay separable in greyscale and in print.
-    TIER_SEQUENCE = ["#4A3607", "#7A5A09", "#B07D0A", "#D3A63F", "#E9CE8C"]
+    # Ordered steps for charts needing more than two categories (the per-tier series).
+    # The previous ramp ended at #E9CE8C, which measures 1.50:1 against the page and was
+    # effectively invisible. This one is validated: monotone lightness, adjacent dL
+    # >= 0.06, light end 2.28:1, hue spread 4 degrees.
+    TIER_SEQUENCE = ["#3A2A06", "#64490B", "#8C6610", "#B4871F", "#D0A338"]
 
-# Call-site aliases. BLUE and RED are kept because they read naturally at the point of
-# use ("red if below the line"); each resolves to the token whose meaning it carries.
-# GREEN is gone: it was pointing at VERDIGRIS, declared for "a check that passed", while
-# actually colouring a postal-code chart, a median-EUI chart and a trend series — the
-# same one-hue-many-meanings problem this palette exists to prevent. ORANGE is gone too;
-# it resolved to INK, so nothing orange was ever drawn and the name misled every reader.
-BLUE = CIVIC
+# Two roles, named for what they do rather than what colour they are. CONTEXT is every
+# series the reader is not being asked to look at; OCHRE is the one that carries the
+# finding. FOCUS_DEEP is one lightness step into the ramp, for a second related series
+# that belongs with the focal one rather than against it.
+CIVIC = CONTEXT                 # retained name; same token
+BLUE = CONTEXT
 RED = OCHRE
-DARK_BLUE = TIER_SEQUENCE[0]   # one lightness step down, for a second related series
+DARK_BLUE = TIER_SEQUENCE[1] if IS_DARK else TIER_SEQUENCE[0]
 
 # ----------------------------------------------------------------------------
 # Typography and page styling
@@ -229,12 +236,12 @@ if not IS_DARK:
     st.markdown(
         """
         <style>
-          .stApp { background-color: #F3F4F6; }
+          .stApp { background-color: #F6F5F3; }
           section[data-testid="stSidebar"] { background-color: #FFFFFF;
-            border-right: 1px solid #E5E7EB; }
+            border-right: 1px solid #EBE8E5; }
           [data-testid="stElementContainer"]:has(> div > div > .cardmark) { display: none; }
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
-            background: #FFFFFF; border: 1px solid #E5E7EB !important; border-radius: 16px;
+            background: #FFFFFF; border: 1px solid #EBE8E5 !important; border-radius: 16px;
             padding: 1.1rem 1.3rem 1.2rem; box-shadow: 0 1px 2px rgba(31,35,41,.05);
             display: flex; flex-direction: column; height: 100%; }
           [data-testid="stHorizontalBlock"] { align-items: stretch; }
@@ -246,29 +253,29 @@ if not IS_DARK:
             margin-top: auto; padding-top: 0.6rem; }
           [data-testid="stButton"] button { width: 100%; }
           [data-testid="stMain"] [data-testid="stBaseButton-secondary"] {
-            background: #FFC93C; border: none; color: #1F2329; font-weight: 600;
+            background: #FFC93C; border: none; color: #23201C; font-weight: 600;
             border-radius: 10px; }
           [data-testid="stMain"] [data-testid="stBaseButton-secondary"]:hover {
-            background: #F0B82C; color: #1F2329; }
-          [data-testid="stMetric"] { background: #F3F4F6; border-radius: 12px;
+            background: #F0B82C; color: #23201C; }
+          [data-testid="stMetric"] { background: #F6F5F3; border-radius: 12px;
             padding: 0.7rem 0.9rem 0.8rem; }
-          [data-testid="stDataFrame"] { border-radius: 12px; border: 1px solid #E5E7EB; }
-          hr { border-color: #E5E7EB !important; margin: 0.9rem 0 !important; }
-          [data-testid="stTabs"] { background: #FFFFFF; border: 1px solid #E5E7EB;
+          [data-testid="stDataFrame"] { border-radius: 12px; border: 1px solid #EBE8E5; }
+          hr { border-color: #EBE8E5 !important; margin: 0.9rem 0 !important; }
+          [data-testid="stTabs"] { background: #FFFFFF; border: 1px solid #EBE8E5;
             border-radius: 16px; padding: 1.1rem 1.3rem 1.3rem;
             box-shadow: 0 1px 2px rgba(31,35,41,.05); }
-          [data-testid="stTabs"] [data-testid="stMetric"] { background: #F3F4F6; }
+          [data-testid="stTabs"] [data-testid="stMetric"] { background: #F6F5F3; }
           .stTabs [data-baseweb="tab-highlight"] { background-color: #B07D0A; }
-          .stTabs [data-baseweb="tab-list"] { gap: 1.4rem; border-bottom: 1px solid #E5E7EB; }
-          .stTabs [data-baseweb="tab"] { padding: 0 0 0.55rem; color: #6B7280; }
-          .stTabs [aria-selected="true"] { color: #1F2329; font-weight: 600; }
+          .stTabs [data-baseweb="tab-list"] { gap: 1.4rem; border-bottom: 1px solid #EBE8E5; }
+          .stTabs [data-baseweb="tab"] { padding: 0 0 0.55rem; color: #7A736A; }
+          .stTabs [aria-selected="true"] { color: #23201C; font-weight: 600; }
           .st-key-phase, .st-key-phase [data-testid="stRadio"] { width: 100%; }
           .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; width: 100%;
             align-items: stretch; }
-          .st-key-phase [data-testid="stRadioGroup"] > * { background: #F3F4F6;
+          .st-key-phase [data-testid="stRadioGroup"] > * { background: #F6F5F3;
             border-radius: 12px; padding: 0.55rem 0.75rem 0.6rem; margin: 0; width: 100%;
             box-sizing: border-box; transition: background 120ms ease; }
-          .st-key-phase [data-testid="stRadioGroup"] > *:hover { background: #ECEEF1; }
+          .st-key-phase [data-testid="stRadioGroup"] > *:hover { background: #F1EFEC; }
           .st-key-phase [data-testid="stRadioGroup"] > *:has(input:checked) {
             background: #FFC93C; }
           .st-key-phase [data-testid="stRadioGroup"] > *:active { transform: scale(0.985); }
@@ -277,8 +284,13 @@ if not IS_DARK:
             display: none; }
           .st-key-phase [data-testid="stRadioOption"] > div { gap: 0; }
           .st-key-phase [data-testid="stRadioCaption"] { font-size: 0.68rem; opacity: 0.72; }
-          .block-container { padding-top: 2.2rem !important; padding-bottom: 3rem !important;
-            max-width: 1500px; }
+          /* Streamlit's default side padding is 80px each way. On a 1200px main area
+             that is 160px -- 13% of the width -- spent before anything renders, and the
+             cards inside add their own. 32px is enough to keep content off the chrome. */
+          .block-container { padding: 2rem 2rem 3rem !important; max-width: 1500px; }
+          @media (max-width: 900px) {
+            .block-container { padding: 1.4rem 1rem 2rem !important; }
+          }
           [data-testid="stVerticalBlock"] { gap: 0.75rem; }
           [data-testid="stTabs"] [data-testid="stVerticalBlock"] { gap: 0.6rem; }
           h1 { font-size: 1.6rem !important; }
@@ -288,27 +300,27 @@ if not IS_DARK:
           [data-testid="stMetricValue"] { font-size: 1.55rem; }
           [data-testid="stMetricLabel"] { font-size: 0.72rem !important; opacity: 0.68;
             text-transform: uppercase; letter-spacing: 0.055em; }
-          [data-testid="stAlertContainer"] { border-radius: 12px; border: 1px solid #E5E7EB;
+          [data-testid="stAlertContainer"] { border-radius: 12px; border: 1px solid #EBE8E5;
             border-left: 4px solid #B07D0A; background: #FFFFFF; }
           [data-testid="stAlertContainer"] p { font-size: 0.9rem; }
           .statband { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
-            background: #E5E7EB; border: 1px solid #E5E7EB; border-radius: 14px;
+            background: #EBE8E5; border: 1px solid #EBE8E5; border-radius: 14px;
             overflow: hidden; }
           .statband .bcell { background: #FFFFFF; padding: 0.8rem 1rem 0.85rem; }
           .statband .bcell.hi { background: #FDF4E0; }
           .statband .bcell span { display: block; font-size: 0.66rem; letter-spacing: 0.06em;
-            text-transform: uppercase; color: #6B7280; margin-bottom: 0.15rem; }
+            text-transform: uppercase; color: #7A736A; margin-bottom: 0.15rem; }
           .statband .bcell b { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.025em; }
           .pullq { background: #FDF4E0; border-left: 4px solid #B07D0A;
             border-radius: 0 14px 14px 0; padding: 0.9rem 1.2rem; }
           .srule { display: flex; gap: 0.85rem; align-items: baseline;
-                   border-top: 2px solid #1F2329; padding-top: 0.55rem;
+                   border-top: 2px solid #23201C; padding-top: 0.55rem;
                    margin: 2.1rem 0 1.1rem; }
           .srule .snum { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
                    color: #B07D0A; font-variant-numeric: tabular-nums; }
           .srule h3 { margin: 0 !important; font-size: 1.08rem !important;
                    font-weight: 700; letter-spacing: -0.015em; padding: 0 !important; }
-          .srule p { margin: 0.2rem 0 0; font-size: 0.84rem; color: #6B7280; }
+          .srule p { margin: 0.2rem 0 0; font-size: 0.84rem; color: #7A736A; }
           /* One type scale, applied everywhere. Before this, st.metric, st.caption,
              st.info and the custom helpers each set their own size, so nine text
              treatments sat within a few tenths of a rem of each other and nothing
@@ -323,29 +335,29 @@ if not IS_DARK:
           .stMain .stMarkdown p, .stMain .stMarkdown li { font-size: 0.88rem; }
           .stMain [data-testid="stExpander"] summary p { font-size: 0.75rem !important;
                    letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600;
-                   color: #6B7280; }
-          .stMain [data-testid="stExpander"] details { border: 0; border-top: 1px dashed #D8DBE0;
+                   color: #7A736A; }
+          .stMain [data-testid="stExpander"] details { border: 0; border-top: 1px dashed #DFDCD9;
                    border-radius: 0; background: transparent; }
           .stMain [data-testid="stExpander"] summary { padding-left: 0; }
           .kv { margin-bottom: 0.55rem; }
           .kv > div { display: flex; justify-content: space-between; align-items: baseline;
-                   gap: 1rem; padding: 0.42rem 0; border-bottom: 1px solid #EEF0F2; }
+                   gap: 1rem; padding: 0.42rem 0; border-bottom: 1px solid #F2F0EE; }
           .kv > div:last-child { border-bottom: 0; }
-          .kv span { font-size: 0.78rem; color: #6B7280; }
+          .kv span { font-size: 0.78rem; color: #7A736A; }
           .kv b { font-size: 0.95rem; font-weight: 700; letter-spacing: -0.02em;
                    white-space: nowrap; font-variant-numeric: tabular-nums; }
           .phasecard h4 { margin: 0 !important; font-size: 1.02rem !important;
                    font-weight: 700; letter-spacing: -0.015em; padding: 0 !important; }
-          .phasecard p { margin: 0.25rem 0 0; font-size: 0.82rem; color: #6B7280; }
+          .phasecard p { margin: 0.25rem 0 0; font-size: 0.82rem; color: #7A736A; }
           .pullq > b { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
-          .pullq p b { font-weight: 700; color: #1F2329; }
-          .pullq p { margin: 0; font-size: 0.88rem; color: #4B5563; }
+          .pullq p b { font-weight: 700; color: #23201C; }
+          .pullq p { margin: 0; font-size: 0.88rem; color: #61584D; }
           .claim { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.025em;
             line-height: 1.25; margin: 0.3rem 0 0.4rem; }
           .claim em { font-style: normal; color: #B07D0A; }
           .eyebrow { font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase;
-            color: #6B7280; font-weight: 600; }
-          .sublead { font-size: 0.88rem; color: #4B5563; margin: 0; }
+            color: #7A736A; font-weight: 600; }
+          .sublead { font-size: 0.88rem; color: #61584D; margin: 0; }
           .pagehead h2 { margin: 0.1rem 0 0.15rem !important; font-size: 1.5rem !important;
             letter-spacing: -0.015em; }
           .pagehead .standing { font-size: 0.8rem; opacity: 0.6; margin: 0 0 0.5rem; }
@@ -1362,12 +1374,12 @@ def render_home(source_label):
  aria-label="Of all filings, {_inc:.1f} per cent are structurally incomplete; among
  complete filings {facts['complete_rate']:.2f} per cent are compliant.">
 <text x="2" y="14" font-size="10" fill="{SLATE}">ALL FILINGS · {facts['filings']:,}</text>
-<rect x="0" y="22" width="330" height="34" rx="6" fill="#E5E7EB"/>
+<rect x="0" y="22" width="330" height="34" rx="6" fill="#EBE8E5"/>
 <rect x="0" y="22" width="{_w1:.0f}" height="34" rx="6" fill="{OCHRE}"/>
 <text x="9" y="44" font-size="12" fill="#FFFFFF" font-weight="600">{_inc:.1f}%</text>
 <text x="{_w1 + 12:.0f}" y="44" font-size="11" fill="{INK}">incomplete · {facts['n_incomplete']:,}</text>
 <text x="2" y="84" font-size="10" fill="{SLATE}">COMPLETE FILINGS · {facts['n_complete']:,}</text>
-<rect x="0" y="92" width="330" height="34" rx="6" fill="#E5E7EB"/>
+<rect x="0" y="92" width="330" height="34" rx="6" fill="#EBE8E5"/>
 <rect x="0" y="92" width="{_w2:.0f}" height="34" rx="6" fill="{CIVIC}"/>
 <text x="9" y="114" font-size="12" fill="#FFFFFF" font-weight="600">{facts['complete_rate']:.2f}% compliant</text>
 </svg>""",
@@ -2319,19 +2331,19 @@ else:
             _priv = int(_own.loc[_small, False].sum())
             _city = int(_own.loc[_small, True].sum())
             if _priv == 0:
-                st.caption(
+                method(
                     f"The ordinance covers privately owned buildings at 20,000 sq ft and "
-                    f"city-owned buildings at 7,500, so the tiers below 20,000 sq ft exist only "
-                    f"because city ownership lowers the floor. That holds in this data: "
+                    f"city-owned buildings at 7,500, so the tiers below 20,000 sq ft exist "
+                    f"only because city ownership lowers the floor. That holds here: "
                     f"{', '.join(_small)} together hold {_city:,} filings and not one is "
-                    f"privately owned. A compliance gap at the small end of the ranking below is "
-                    f"therefore an ownership difference as well as a size one."
-                )
+                    f"privately owned. A compliance gap at the small end of the ranking "
+                    f"below is therefore an ownership difference as well as a size one.",
+                    "Why the small tiers are city-owned")
             else:
                 st.caption(
-                    f"Note: {_priv:,} privately owned filing(s) appear below the 20,000 sq ft "
-                    f"ordinance floor, alongside {_city:,} city-owned. Size and ownership are not "
-                    f"fully entangled at the small end in this selection."
+                    f"{_priv:,} privately owned filing(s) sit below the 20,000 sq ft "
+                    f"floor, alongside {_city:,} city-owned \u2014 size and ownership are "
+                    f"not fully entangled at the small end here."
                 )
 
         _bands = (dff.groupby("sizeBand")["isIncompleteFiling"].size()
@@ -2361,7 +2373,7 @@ else:
                             marker_color=BLUE, text=_all.round(1), textposition="outside",
                             cliponaxis=False)
                 fig.add_bar(y=_bands, x=_cmp.values, orientation="h",
-                            name="Complete filings only", marker_color="#90CAF9",
+                            name="Complete filings only", marker_color=OCHRE,
                             text=_cmp.round(1), textposition="outside", cliponaxis=False)
                 fig.update_layout(height=430, barmode="group", xaxis_range=[0, 128],
                                   xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
@@ -2372,8 +2384,9 @@ else:
                 fig = go.Figure(go.Bar(y=_bands, x=_inc.values, orientation="h",
                                        marker_color=RED, text=_inc.round(1),
                                        textposition="outside", cliponaxis=False))
+                # Default annotation position lands on the top bar's value label.
                 fig.add_vline(x=dff["isIncompleteFiling"].mean() * 100, line_dash="dash",
-                              line_color=INK,
+                              line_color=INK, annotation_position="bottom right",
                               annotation_text=f"overall {dff['isIncompleteFiling'].mean()*100:.1f}%")
                 fig.update_layout(height=430, xaxis_range=[0, _inc.max() * 1.3],
                                   xaxis_title="% of filings structurally incomplete",
