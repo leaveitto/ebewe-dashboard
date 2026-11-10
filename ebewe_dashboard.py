@@ -70,20 +70,25 @@ except Exception:          # older Streamlit, or no theme information available
 IS_DARK = _THEME == "dark"
 
 if IS_DARK:
-    INK = "#E8EAED"        # text, axes, reference lines
-    SLATE = "#9AA4AE"      # secondary text; the default for any non-focal series
-    CIVIC = "#5B9BD1"      # the measured quantity; COMPLIED
-    OCHRE = "#E08A4B"      # the contrasting state: NOT COMPLIED, incomplete, below threshold
-    TIER_SEQUENCE = ["#C2D4E0", "#8FB4CC", "#5B9BD1", "#3A7BA8", "#245C82"]
+    INK = "#ECEEF1"        # text, axes, reference lines; also the second data series
+    SLATE = "#9BA2AD"      # secondary text; the default for any non-focal series
+    CIVIC = "#AEB6C2"      # the measured quantity; COMPLIED
+    OCHRE = "#E0A93B"      # the contrasting state: NOT COMPLIED, incomplete, below threshold
+    YELLOW = "#FFC93C"     # interface state only — selected, buttons, pills. Never a mark.
+    TIER_SEQUENCE = ["#F0DCA8", "#E0A93B", "#B07D0A", "#7A5A09", "#4A3607"]
 else:
-    INK = "#12161A"
-    SLATE = "#5C6771"
-    CIVIC = "#1F5C87"
-    OCHRE = "#B85C1E"
-    # Ordered hues for charts that genuinely need more than two categories (the
-    # per-tier series). Sequential in lightness so the series stay separable in
-    # greyscale and in print.
-    TIER_SEQUENCE = ["#12314A", "#1F5C87", "#4A8DB8", "#8FB4CC", "#C2D4E0"]
+    INK = "#1F2329"
+    SLATE = "#6B7280"
+    CIVIC = "#39414D"
+    OCHRE = "#B07D0A"
+    # Two yellows, because one cannot do both jobs. #FFC93C is what makes the interface
+    # feel like itself, and it works on buttons and selected rows because they are large
+    # filled shapes. As a chart line on white it measures 1.54:1 and disappears. OCHRE is
+    # the same hue darkened to 3.63:1, so a line or a small marker still reads.
+    YELLOW = "#FFC93C"
+    # Ordered steps for charts that genuinely need more than two categories (the per-tier
+    # series). Sequential in lightness so they stay separable in greyscale and in print.
+    TIER_SEQUENCE = ["#4A3607", "#7A5A09", "#B07D0A", "#D3A63F", "#E9CE8C"]
 
 # Call-site aliases. BLUE and RED are kept because they read naturally at the point of
 # use ("red if below the line"); each resolves to the token whose meaning it carries.
@@ -219,35 +224,37 @@ st.markdown(
 # ----------------------------------------------------------------------------
 # Ground — light mode only
 # ----------------------------------------------------------------------------
-# Streamlit's default white is colder than this palette, which makes OCHRE read as
-# alarm rather than as the second encoding hue. A warm off-white with a slightly
-# deeper sidebar gives the page a paper ground, and lets metric tiles and tables sit
-# on it as surfaces rather than as floating text. Applied only in light mode: the
-# dark tokens above already handle the other case, and pinning colours unconditionally
-# is what broke dark mode in an earlier version.
+# A grey page with white cards floating on it, rather than Streamlit's flat white.
+# The separation is what lets a card be a unit: the border does almost nothing and the
+# ground does the work, which is why the corners can be soft without looking fussy.
+# Applied only in light mode — the dark tokens above handle the other case, and pinning
+# colours unconditionally is what broke dark mode in an earlier version.
 #
-# Same no-blank-lines rule as the sheet above — a blank line followed by indented text
-# is markdown's code-block syntax and would close the <style> element early.
+# Same no-blank-lines rule as the sheet above: a blank line followed by indented text is
+# markdown's code-block syntax and would close the <style> element early.
 if not IS_DARK:
     st.markdown(
         """
         <style>
-          .stApp { background-color: #FAF8F5; }
-          section[data-testid="stSidebar"] { background-color: #F2EEE8;
-            border-right: 1px solid #E4DED4; }
-          /* Metric tiles become surfaces. Four bare numbers in a row read as a list;
-             four tiles read as a panel, which is what a KPI row is. */
-          [data-testid="stMetric"] { background: #FFFFFF; border: 1px solid #E7E1D7;
-            border-radius: 10px; padding: 0.7rem 0.9rem 0.8rem; }
-          [data-testid="stMetricLabel"] { opacity: 0.72; }
-          /* Bordered containers pick up the same surface so cards and tiles agree. */
-          [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"]
-            { border-radius: 10px; }
-          /* Tables: lighter rules, warmer header. The default grey header competes with
-             the data for attention. */
-          [data-testid="stDataFrame"] { border-radius: 8px; }
-          /* Dividers recede; they separate sections rather than announcing themselves. */
-          hr { border-color: #E7E1D7 !important; }
+          .stApp { background-color: #F3F4F6; }
+          section[data-testid="stSidebar"] { background-color: #FFFFFF;
+            border-right: 1px solid #E5E7EB; }
+          /* Cards. st.container(border=True) is the unit this app composes with, so it
+             gets the white fill, the soft corner and a shadow light enough to read as
+             lift rather than as a drop shadow. */
+          [data-testid="stVerticalBlockBorderWrapper"] { background: #FFFFFF;
+            border-radius: 16px; border: 1px solid #E5E7EB;
+            box-shadow: 0 1px 2px rgba(31,35,41,.05); }
+          /* Metric tiles sit inside cards, so they take the page grey rather than white —
+             a white tile on a white card has nothing to sit against. */
+          [data-testid="stMetric"] { background: #F3F4F6; border-radius: 12px;
+            padding: 0.7rem 0.9rem 0.8rem; }
+          [data-testid="stMetricLabel"] { opacity: 0.68; }
+          [data-testid="stDataFrame"] { border-radius: 12px; }
+          hr { border-color: #E5E7EB !important; }
+          /* The active tab carries the amber, not the bright yellow: an underline is a
+             thin mark and the bright one would vanish against white. */
+          .stTabs [data-baseweb="tab-highlight"] { background-color: #B07D0A; }
         </style>
         """,
         unsafe_allow_html=True,
