@@ -290,7 +290,7 @@ if not IS_DARK:
           [data-testid="stElementContainer"]:has(> div > div > .cardmark) { display: none; }
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
             background: #FFFFFF; border: 1px solid #EBE8E5 !important; border-radius: 16px;
-            padding: 1.1rem 1.3rem 1.2rem; box-shadow: 0 1px 2px rgba(31,35,41,.05);
+            padding: 1.35rem 1.5rem 1.45rem; box-shadow: 0 1px 2px rgba(31,35,41,.05);
             display: flex; flex-direction: column; height: 100%; }
           [data-testid="stHorizontalBlock"] { align-items: stretch; }
           [data-testid="stColumn"] > [data-testid="stVerticalBlock"] { height: 100%; }
@@ -310,7 +310,7 @@ if not IS_DARK:
           [data-testid="stDataFrame"] { border-radius: 12px; border: 1px solid #EBE8E5; }
           hr { border-color: #EBE8E5 !important; margin: 0.9rem 0 !important; }
           [data-testid="stTabs"] { background: #FFFFFF; border: 1px solid #EBE8E5;
-            border-radius: 16px; padding: 1.1rem 1.3rem 1.3rem;
+            border-radius: 16px; padding: 1.3rem 1.5rem 1.6rem;
             box-shadow: 0 1px 2px rgba(31,35,41,.05); }
           [data-testid="stTabs"] [data-testid="stMetric"] { background: #F6F5F3; }
           /* Pills, as in the structure mockup. An underline strip reads as browser
@@ -369,7 +369,7 @@ if not IS_DARK:
             .block-container { padding: 1.4rem 1rem 2rem !important; }
           }
           [data-testid="stVerticalBlock"] { gap: 0.75rem; }
-          [data-testid="stTabs"] [data-testid="stVerticalBlock"] { gap: 0.6rem; }
+          [data-testid="stTabs"] [data-testid="stVerticalBlock"] { gap: 1rem; }
           h1 { font-size: 1.6rem !important; }
           h2 { font-size: 1.22rem !important; margin: 0.2rem 0 0.1rem !important; }
           h3 { font-size: 1rem !important; margin: 0.6rem 0 0.1rem !important; }
@@ -387,17 +387,21 @@ if not IS_DARK:
           .statband { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
             background: #EBE8E5; border: 1px solid #EBE8E5; border-radius: 14px;
             overflow: hidden; }
-          .statband .bcell { background: #FFFFFF; padding: 0.8rem 1rem 0.85rem; }
+          .statband .bcell { background: #FFFFFF; padding: 1rem 1.15rem 1.05rem; }
           .statband .bcell.hi { background: #FDF4E0; }
           .stMain .statband .bcell span { display: block; font-size: 0.66rem; letter-spacing: 0.06em;
             text-transform: uppercase; color: #7A736A; margin-bottom: 0.15rem; }
           .stMain .statband .bcell b { font-size: 1.22rem; font-weight: 700;
                    letter-spacing: -0.025em; }
           .pullq { background: #FDF4E0; border-left: 4px solid #B07D0A;
-            border-radius: 0 14px 14px 0; padding: 0.9rem 1.2rem; }
+            border-radius: 0 14px 14px 0; padding: 1.05rem 1.35rem;
+            margin: 0.35rem 0 0.2rem; }
           .srule { display: flex; gap: 0.85rem; align-items: baseline;
-                   border-top: 2px solid #23201C; padding-top: 0.55rem;
-                   margin: 2.1rem 0 1.1rem; }
+                   border-top: 2px solid #23201C; padding-top: 0.7rem;
+                   margin: 2.9rem 0 1.5rem; }
+          /* the first rule in a tab should not sit hard against the strip */
+          [data-testid="stTabPanel"] [data-testid="stElementContainer"]:first-child
+            .srule { margin-top: 1.3rem; }
           .stMain .srule .snum { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
                    color: #B07D0A; font-variant-numeric: tabular-nums; }
           .stMain .srule h3 { margin: 0 !important; font-size: 1.08rem !important;
@@ -449,7 +453,7 @@ if not IS_DARK:
                    font-size: 0.78rem; font-weight: 700; letter-spacing: -0.015em;
                    white-space: nowrap; }
           table.mini { width: 100%; border-collapse: collapse; font-size: 0.76rem;
-                   margin: 0.5rem 0 0.2rem; }
+                   margin: 0.7rem 0 0.4rem; }
           .miniwrap { width: 100%; overflow-x: auto; }
           .stMain table.mini th, table.mini td { padding: 0.44rem 0.62rem; text-align: left;
                    border-bottom: 1px solid #EBE8E5; white-space: nowrap; }
@@ -531,7 +535,9 @@ PLOT_LAYOUT = {
     "hoverlabel": {"bgcolor": "#FFFFFF", "bordercolor": "rgba(128,120,110,0.28)",
                    "font": {"family": "IBM Plex Sans, system-ui, sans-serif",
                             "size": 12, "color": INK}},
-    "margin": {"l": 8, "r": 16, "t": 8, "b": 8},
+    # No margin here. A fixed top margin clips any figure that has a title, and a
+    # fixed bottom one clips a legend placed below the plot. chart() sizes both
+    # from what the figure actually carries.
 }
 
 def chart(fig, **kwargs):
@@ -549,10 +555,30 @@ def chart(fig, **kwargs):
     because the cause is the empty title object rather than how it is spelled.
     """
     layout = dict(PLOT_LAYOUT)
+    has_title = bool(getattr(fig.layout.title, "text", None))
     title_font = layout.pop("title_font", None)
-    if title_font and getattr(fig.layout.title, "text", None):
+    if title_font and has_title:
         layout["title_font"] = title_font
     fig.update_layout(**layout)
+
+    # Margins are measured from what the figure carries, not fixed. A title needs
+    # room above the plot and a legend below it needs room under; one set of
+    # numbers for every figure clips whichever it did not allow for.
+    _legend_below = (fig.layout.showlegend is not False
+                     and sum(1 for t in fig.data if t.showlegend is not False) > 1)
+    # layout.margin is a plotly Margin object, not a mapping: read its sides.
+    _m = fig.layout.margin
+    fig.update_layout(margin={
+        "l": _m.l if _m.l is not None else 8,
+        "r": _m.r if _m.r is not None else 16,
+        "t": _m.t if _m.t is not None else (46 if has_title else 10),
+        "b": _m.b if _m.b is not None else (64 if _legend_below else 12),
+    })
+    if has_title:
+        # Left-aligned to the plot area, sitting clear of it.
+        fig.update_layout(title={"x": 0, "xref": "paper", "xanchor": "left",
+                                 "y": 1, "yref": "container", "yanchor": "top",
+                                 "pad": {"t": 6, "b": 14}})
 
     # Mark specs, applied centrally so no figure can miss them.
     for tr in fig.data:
@@ -2375,19 +2401,30 @@ if phase == PHASE_PRELIM:
                                    marker_color=colors, text=comp_rate.round(1),
                                    texttemplate="%{text}%", textposition="outside",
                                    cliponaxis=False))
-            fig.add_vline(x=comp_rate.mean(), line_dash="dash", line_color=INK,
+            # Both labels used to sit inside the plot, landing on the bars and on
+            # each other. Above the plot area they annotate the lines without
+            # competing with the data.
+            fig.add_vline(x=comp_rate.mean(), line_dash="dash", line_width=1,
+                          line_color=AXIS_RGBA,
                           annotation_text=f"Avg {comp_rate.mean():.1f}%",
-                          annotation_position="bottom left")
-            fig.add_vline(x=80, line_dash="dot", line_color=INK,
-                          annotation_text="80% reference line", annotation_position="top left")
+                          annotation_position="top", annotation_yshift=10,
+                          annotation_font={"size": 10, "color": SLATE})
+            fig.add_vline(x=80, line_dash="dot", line_width=1, line_color=AXIS_RGBA,
+                          annotation_text="80% reference",
+                          annotation_position="top", annotation_yshift=26,
+                          annotation_font={"size": 10, "color": SLATE})
+            # Explicit top margin: the two reference-line labels sit above the plot,
+            # and without a title chart() would leave only 10px and clip them.
             fig.update_layout(height=max(380, 30 * len(comp_rate)),
+                              margin={"t": 46},
                               xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                               xaxis_range=[0, 118],   # 18% headroom, matching _pad_axis
-                              title="Below the 80% reference line is marked darker")
+                              )  # no title: the note beside the chart says this,
+            # and a title here would sit under the two reference-line labels
             with _ev:
                 chart(fig)
         with _nt:
-            with card():
+            if True:
                 st.markdown(
                     "**The 80% line is a reading aid, not a target.** The ordinance sets "
                     "deadlines and fees, not a compliance-rate goal."
@@ -2721,9 +2758,12 @@ else:
                                        textposition="outside", cliponaxis=False))
                 # Default annotation position lands on the top bar's value label.
                 fig.add_vline(x=dff["isIncompleteFiling"].mean() * 100, line_dash="dash",
-                              line_color=INK, annotation_position="bottom right",
+                              line_width=1, line_color=AXIS_RGBA,
+                              annotation_position="top", annotation_yshift=10,
+                              annotation_font={"size": 10, "color": SLATE},
                               annotation_text=f"overall {dff['isIncompleteFiling'].mean()*100:.1f}%")
                 fig.update_layout(height=430, xaxis_range=[0, _inc.max() * 1.3],
+                                  margin={"t": 62},
                                   xaxis_title="% of filings structurally incomplete",
                                   yaxis={"autorange": "reversed"},
                                   title="B. Filing incompleteness by coverage tier")
@@ -2889,9 +2929,12 @@ else:
                 textposition="outside", cliponaxis=False,
                 customdata=_show["filings"],
                 hovertemplate="%{y}<br>%{x}% compliant<br>%{customdata:,} filings<extra></extra>"))
-            fig.add_vline(x=_base, line_dash="dash", line_color=INK,
-                          annotation_text=f"Baseline {_base:.1f}%", annotation_position="top left")
+            fig.add_vline(x=_base, line_dash="dash", line_width=1, line_color=AXIS_RGBA,
+                          annotation_text=f"Baseline {_base:.1f}%",
+                          annotation_position="top", annotation_yshift=10,
+                          annotation_font={"size": 10, "color": SLATE})
             fig.update_layout(height=max(420, 26 * len(_show)), xaxis_range=[0, 118],
+                              margin={"t": 56},
                               xaxis_title="% Compliant", yaxis={"autorange": "reversed"},
                               title="Lowest and highest compliance among high-volume agents")
             section("02", "The agents at each end")
