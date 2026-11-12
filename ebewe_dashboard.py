@@ -320,18 +320,32 @@ if not IS_DARK:
              .react-aria-SelectionIndicator child -- there is no data-baseweb="tab"
              here at all, so selectors written against that name match nothing.
              Checked against the live DOM. */
-          .stTabs [role="tablist"] { gap: 0.4rem !important; border-bottom: 0;
-                   flex-wrap: wrap; padding: 0 0 0.2rem; }
+          /* Folder tabs. The strip carries one continuous edge the full width of the
+             panel; each tab is rounded on its top corners only and sits on that edge,
+             and the selected one overlaps it by a pixel so the line breaks where the
+             open folder is. The loose rule that used to float under the pills is that
+             edge now, so it reads as structure rather than as a stray border. */
+          .stTabs [role="tablist"] { gap: 0.25rem !important; flex-wrap: wrap;
+                   width: 100%; padding: 0 !important; align-items: flex-end;
+                   border-bottom: 1px solid #E2DDD5; }
           .stTabs .react-aria-SelectionIndicator { display: none !important; }
-          .stTabs [data-testid="stTab"] { padding: 0.44rem 0.95rem !important;
-                   background: #F6F5F3; border: 1px solid #EBE8E5; border-radius: 999px;
+          /* A transparent bottom border still has the tab's own background painted
+             behind it, so the strip's edge was being erased under every closed tab
+             and only reappeared past the last one. Closed tabs carry the edge colour
+             themselves; only the open one breaks it. */
+          .stTabs [data-testid="stTab"] { padding: 0.42rem 1rem 0.46rem !important;
+                   background: #F1EEE9; border: 1px solid #E2DDD5;
+                   border-bottom: 1px solid #E2DDD5;
+                   border-radius: 10px 10px 0 0; margin-bottom: -1px;
                    height: auto !important; transition: background .12s ease; }
           .stTabs [data-testid="stTab"] p { font-size: 0.8rem !important;
                    font-weight: 600; color: #7A736A; }
-          .stTabs [data-testid="stTab"]:hover { background: #EFEBE4; }
+          .stTabs [data-testid="stTab"]:hover { background: #E8E2D8; }
           .stTabs [data-testid="stTab"]:hover p { color: #23201C; }
+          /* the open folder: yellow, one step taller, and it cuts the edge */
           .stTabs [data-testid="stTab"][aria-selected="true"] { background: #FFC93C;
-                   border-color: #FFC93C; }
+                   border-color: #F0B82C; border-bottom-color: #FFC93C;
+                   padding-top: 0.56rem !important; }
           .stTabs [data-testid="stTab"][aria-selected="true"] p { color: #23201C; }
           .st-key-phase, .st-key-phase [data-testid="stRadio"] { width: 100%; }
           .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; width: 100%;
@@ -1584,7 +1598,7 @@ def render_home(source_label):
            facts['complete_rate'] / 100, False),
           ("Incompl. failed", f"{facts['incomplete_notcomplied']:.1f}%",
            facts['incomplete_notcomplied'] / 100, True)],
-         "Data Quality · Descriptive Stats · Figures 1\u20134",
+         "Data Quality · Descriptive Stats · Key Figures",
          "Open Preliminary", "go_prelim", PHASE_PRELIM),
         (c2, "02", "Midterm", "diagnostic",
          "Is compliance falling, and what actually separates it?",
@@ -1856,7 +1870,7 @@ if phase == PHASE_PRELIM:
     tabs = st.tabs([
         "Data Quality",
         "Descriptive Stats",
-        "Figures 1–4",
+        "Key Figures",
     ])
 
     with tabs[0]:
