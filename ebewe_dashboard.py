@@ -316,6 +316,9 @@ if not IS_DARK:
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-hero3) {
             height: 300px; flex: 0 0 300px;
             overflow-y: auto; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-phase) {
+            height: 340px; flex: 0 0 340px;
+            overflow-y: auto; }
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-hero) {
             height: 360px; flex: 0 0 360px;
             overflow-y: auto; }
@@ -1255,17 +1258,22 @@ def _inline_md(text):
 
 # Row heights. A row is fixed; every panel in it declares the same number, so the
 # panels are equal without stretching and a chart can be sized to fill exactly.
-ROW_H = {"quad": 170, "trio": 238, "lead": 250, "pair": 290, "hero3": 300, "hero": 360,
-         "tall": 430}
+ROW_H = {"quad": 170, "trio": 238, "lead": 250, "pair": 290, "hero3": 300,
+         "phase": 340, "hero": 360, "tall": 430}
 # Space a panel spends on its own chrome: padding, header, and the caption under a
 # chart. A chart asks for the row height minus this, so it ends flush with the card.
-PANEL_CHROME = 64
+# Measured against the rendered panels, not estimated: header, padding and the
+# gaps Streamlit puts between elements come to about 96px, a caption adds 34, and
+# a disclosure adds 34 more. Charts sized with the old 64 overflowed by 38-72px.
+PANEL_CHROME = 96
 CAPTION_H = 34
+DISCLOSURE_H = 34
 
 
-def plot_h(row, caption=False, extra=0):
+def plot_h(row, caption=False, method=False, extra=0):
     """The height a chart must be to fill its panel exactly, and no more."""
-    return max(120, ROW_H[row] - PANEL_CHROME - (CAPTION_H if caption else 0) - extra)
+    return max(110, ROW_H[row] - PANEL_CHROME - (CAPTION_H if caption else 0)
+               - (DISCLOSURE_H if method else 0) - extra)
 
 
 @contextmanager
@@ -1802,10 +1810,8 @@ def render_home(source_label):
           ("Complete only", f"{facts['fall_complete']:.1f}",
            facts['fall_complete'] / 100, True),
           ("Tier spread", f"{facts['tier_spread_all']:.1f}",
-           facts['tier_spread_all'] / 100, False),
-          ("Tier, complete", f"{facts['tier_spread_complete']:.1f}",
-           facts['tier_spread_complete'] / 100, True)],
-         "Compliance Trend · Coverage Tier · Responsible Entity · Correlations",
+           facts['tier_spread_all'] / 100, False)],
+         "Trend · Coverage Tier · Entity · Correlations",
          "Open Midterm", "go_mid", PHASE_MID),
         (c3, "03", "Final", "predictive",
          "Can non-compliance be predicted well enough to target audits?",
@@ -1813,14 +1819,16 @@ def render_home(source_label):
            facts['majority_complete'] / 100, True),
           ("One-column rule", f"{facts['one_rule_acc']:.1f}%",
            facts['one_rule_acc'] / 100, True),
-          ("Modelled on", f"{facts['n_complete']:,}"),
-          ("Target group", f"{facts['n_noncompliant_complete']:,}")],
-         "Model comparison · feature importance · ranked review list",
+          ("Target group", f"{facts['n_noncompliant_complete']:,}",
+           facts['n_noncompliant_complete'] / max(1, facts['n_complete']), False)],
+         "Models · importance · review list",
          "Open Final", "go_final", PHASE_FINAL),
     ]
     for _col, _n, _name, _kind, _q, _rows, _tabs, _label, _key, _phase in _cards:
         with _col:
-            with card():
+            # One row height for the set: the cards are read against each other,
+            # so their buttons have to land on the same line.
+            with card("phase"):
                 st.markdown(
                     f"<div class='phasecard'><span class='eyebrow'>{_n} \u00b7 "
                     f"{_kind.upper()}</span><h4>{_name}</h4><p>{_q}</p></div>",
@@ -1846,7 +1854,7 @@ def render_home(source_label):
         # place so reading it does not move everything below it.
         _pa, _pb = st.columns([1, 2], gap="medium")
         with _pa:
-            with panel(title="Provenance", h="pair"):
+            with panel(title="Provenance", h="phase"):
                 st.markdown(
                     "<dl class='defs'>"
                     "<dt>Programme</dt><dd>EBEWE, City of Los Angeles</dd>"
@@ -1856,9 +1864,8 @@ def render_home(source_label):
                     "</dl>", unsafe_allow_html=True)
                 pull("A row is one filing",
                      f"Not one building. {facts['filings']:,} filings cover "
-                     f"{facts['buildings']:,} buildings across program years "
-                     f"{facts['first_year']} to {facts['last_year']}, so a building "
-                     f"appears once per year it reports.")
+                     f"{facts['buildings']:,} buildings, so a building appears once "
+                     f"per year it reports.")
         with _pb:
             src_cols = [c for c in df.columns if c in COLUMN_NOTES]
             eng_cols = [c for c in df.columns if c in ENGINEERED_NOTES]
@@ -1874,11 +1881,11 @@ def render_home(source_label):
                 f"<span class='dbar'><span style='width:{p:.0f}%'></span></span>"
                 f"<span class='dnum'>{p:.0f}</span>")
             with panel(title="Data dictionary",
-                       note=f"{len(table)} columns \u00b7 scrolls in place", h="pair"):
+                       note=f"{len(table)} columns \u00b7 scrolls in place", h="phase"):
                 scrollbox(["Column", "Description", "Type", "Filled %"],
                           [(r["Column"], r["Description"], f"<code>{r['Type']}</code>",
                             _bar(r["Filled %"])) for _, r in table.iterrows()],
-                          height=plot_h("pair", caption=True), numeric_from=3)
+                          height=plot_h("phase", caption=True), numeric_from=3)
                 st.caption(
                     "Descriptions are the portal's. Type and fill rate are measured "
                     "on the loaded file after cleaning."
@@ -2104,7 +2111,7 @@ if phase == PHASE_PRELIM:
             text=[f"{v:.1f}%" if c in _com else "" for v, c in
                   zip(_m["Missing %"], _m["Column"])],
         )
-        fig.update_layout(height=plot_h("tall"), showlegend=False,
+        fig.update_layout(height=plot_h("tall", method=True), showlegend=False,
                           xaxis_title="Missing (%)", xaxis_ticksuffix="%")
         fig.update_traces(textposition="outside", cliponaxis=False)
         _pad_axis(fig, miss["Missing %"])
@@ -2146,18 +2153,18 @@ if phase == PHASE_PRELIM:
         # from different angles, so they belong beside each other.
         _pb, _ob, _fr = st.columns(3, gap="medium")
         with _pb:
-          with panel("03", "Nulled", "5.2 bounds", h="trio"):
+          with panel("03", "Nulled", "5.2 bounds", h="pair"):
             st.caption("Data-entry errors at both ends.")
             _pr = diag["plaus_report"]
             scrollbox(
                 ["Column", "Ceiling", "Nulled"],
                 [(r["Column"], f"{r['Ceiling']:,.0f}",
                   f"{r['Nulled as data-entry error']:,}")
-                 for _, r in _pr.iterrows()], height=plot_h("trio", caption=True),
+                 for _, r in _pr.iterrows()], height=plot_h("pair", caption=True),
                 focus=int(_pr["Nulled as data-entry error"].astype(float).idxmax())
                 if len(_pr) else None)
         with _ob:
-          with panel("04", "Flagged only", "IQR fences", h="trio"):
+          with panel("04", "Flagged only", "IQR fences", h="pair"):
             st.caption("Unusual but real buildings. Never removed.")
             _orp = diag["outlier_report"]
             _fcol = next((c for c in _orp.columns if "lag" in c), _orp.columns[-1])
@@ -2167,35 +2174,34 @@ if phase == PHASE_PRELIM:
                 [(r["Column"],
                   f"{r[_ucol]:,.2f}" if _ucol is not None else "\u2014",
                   f"{int(r[_fcol]):,}")
-                 for _, r in _orp.iterrows()], height=plot_h("trio", caption=True),
+                 for _, r in _orp.iterrows()], height=plot_h("pair", caption=True),
                 focus=int(_orp[_fcol].astype(float).idxmax()) if len(_orp) else None)
         with _fr:
-          with panel("05", "Other repairs", h="trio"):
+          with panel("05", "Other repairs", h="pair"):
             if diag.get("n_locale_property_types"):
                 st.caption(
                     f"{diag['n_locale_property_types']} filings split one category "
-                    f"across two labels. Distinct types: "
-                    f"{diag['property_types_before']} before, "
-                    f"{diag['property_types_after']} after."
+                    f"across two labels \u2014 {diag['property_types_before']} types "
+                    f"before, {diag['property_types_after']} after."
                 )
                 _lp = diag["locale_property_types"]
                 scrollbox(["From", "To", "n"],
                           [(r["From"], r["To"], f"{int(r['Filings']):,}")
-                           for _, r in _lp.iterrows()], height=130, numeric_from=2)
-            st.caption(
+                           for _, r in _lp.iterrows()],
+                          height=plot_h("pair", caption=True, method=True),
+                          numeric_from=2)
+            _ok = diag["missing_target"] == 0
+            method(
                 f"{diag['n_invalid_yearbuilt']} implausible `yearBuilt` values nulled "
                 f"before `buildingAge` was derived; {diag['n_locale_fixed']} "
-                f"`Non`/`Oui` entries mapped to English before any generic fill."
-            )
-            if diag["missing_target"] == 0:
-                st.success(f"Target integrity: 0 missing `complianceStatus`.")
-            else:
-                st.error(f"{diag['missing_target']} missing complianceStatus values.")
-            method(
-                "The published file encodes the same French label two ways \u2014 once "
-                "with a proper accent and once with a replacement character \u2014 so "
-                "the map is keyed on a form that ignores non-alphanumerics rather "
-                "than on literal strings."
+                f"`Non`/`Oui` entries mapped to English before any generic fill. "
+                + ("Target integrity: 0 missing `complianceStatus`."
+                   if _ok else
+                   f"**{diag['missing_target']} missing complianceStatus values.**")
+                + " The published file encodes the same French label two ways \u2014 "
+                "once with a proper accent and once with a replacement character \u2014 "
+                "so the map is keyed on a form that ignores non-alphanumerics rather "
+                "than on literal strings.", "The other repairs in full"
             )
 
         section("06", "Entity field repairs and audits",
@@ -2675,7 +2681,8 @@ else:
                                text=f"{_ser.values[-1]:.0f}%", showarrow=False,
                                xanchor="left", xshift=10,
                                font={"size": 11, "color": INK})
-        fig.update_layout(height=plot_h("hero", caption=True), yaxis_title="% of filings",
+        fig.update_layout(height=plot_h("hero", caption=True, extra=14),
+                          yaxis_title="% of filings",
                           yaxis_ticksuffix="%", xaxis_title="Program year",
                           margin={"l": 8, "r": 56, "t": 8, "b": 8})
         with _ev:
@@ -2684,7 +2691,7 @@ else:
                 chart(fig)
                 st.caption("The finding is the gap, and how it widens.")
         with _nt:
-          with panel(title="Read with care", h="hero"):
+          with panel(title="Read with care", h="trio"):
             # The three figures this tab would otherwise tile here are already in the
             # band above the tabs, which stays on screen. Repeating them is the
             # redundancy, not the restatement of the caveat below.
