@@ -298,6 +298,38 @@ if not IS_DARK:
              the clutter: space spent on nothing. Tops align, bottoms are ragged,
              and every pixel inside a panel is content. */
           [data-testid="stHorizontalBlock"] { align-items: flex-start; }
+          /* Fixed row heights. A panel declares its row, so panels in a row match
+             without one being stretched to fit another, and a chart sized from the
+             same number ends flush with the card instead of hanging inside it. */
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-quad) {
+            height: 170px; flex: 0 0 170px;
+            overflow-y: auto; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-trio) {
+            height: 238px; flex: 0 0 238px;
+            overflow-y: auto; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-lead) {
+            height: 250px; flex: 0 0 250px;
+            overflow-y: auto; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-pair) {
+            height: 290px; flex: 0 0 290px;
+            overflow-y: auto; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-hero3) {
+            height: 300px; flex: 0 0 300px;
+            overflow-y: auto; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-hero) {
+            height: 360px; flex: 0 0 360px;
+            overflow-y: auto; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .rh-tall) {
+            height: 430px; flex: 0 0 430px;
+            overflow-y: auto; }
+          /* A panel that holds its height needs somewhere for the overflow to go:
+             it scrolls inside itself, so the page never grows to fit it. */
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"]
+            [class*="rh-"])::-webkit-scrollbar { width: 8px; }
+          [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"]
+            [class*="rh-"])::-webkit-scrollbar-thumb { background: #E2DDD5;
+            border-radius: 4px; }
+
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark)
             > [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
             margin-top: auto; padding-top: 0.6rem; }
@@ -1221,15 +1253,30 @@ def _inline_md(text):
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
 
 
+# Row heights. A row is fixed; every panel in it declares the same number, so the
+# panels are equal without stretching and a chart can be sized to fill exactly.
+ROW_H = {"quad": 170, "trio": 238, "lead": 250, "pair": 290, "hero3": 300, "hero": 360,
+         "tall": 430}
+# Space a panel spends on its own chrome: padding, header, and the caption under a
+# chart. A chart asks for the row height minus this, so it ends flush with the card.
+PANEL_CHROME = 64
+CAPTION_H = 34
+
+
+def plot_h(row, caption=False, extra=0):
+    """The height a chart must be to fill its panel exactly, and no more."""
+    return max(120, ROW_H[row] - PANEL_CHROME - (CAPTION_H if caption else 0) - extra)
+
+
 @contextmanager
-def panel(num="", title="", note=""):
+def panel(num="", title="", note="", h=None):
     """A bordered panel carrying its own header.
 
     A section rule divides a column; a panel is a box that can sit beside another
     box. That is the whole difference between a page that only grows downwards and
     a grid, so the header moves inside the card rather than ruling across the page.
     """
-    c = card()
+    c = card(h)
     with c:
         bits = ""
         if num:
@@ -1375,16 +1422,12 @@ def pull(headline, body):
         f"<p>{_inline_md(body)}</p></div>", unsafe_allow_html=True)
 
 
-def card():
-    """A bordered container that CSS can actually find.
-
-    st.container(border=True) renders as a plain stVerticalBlock with a border; there is
-    no test id distinguishing it from every other block, and the emotion class that does
-    is regenerated between Streamlit versions. Dropping an empty marker inside and
-    selecting the block that :has() it is version-independent.
-    """
+def card(h=None):
+    """A bordered container. h names a row height, which fixes the card's height so
+    every panel in that row matches without stretching one to fit another."""
     c = st.container(border=True)
-    c.markdown("<span class='cardmark'></span>", unsafe_allow_html=True)
+    cls = "cardmark" + (f" rh-{h}" if h else "")
+    c.markdown(f"<span class='{cls}'></span>", unsafe_allow_html=True)
     return c
 
 
@@ -1803,7 +1846,7 @@ def render_home(source_label):
         # place so reading it does not move everything below it.
         _pa, _pb = st.columns([1, 2], gap="medium")
         with _pa:
-            with panel(title="Provenance"):
+            with panel(title="Provenance", h="pair"):
                 st.markdown(
                     "<dl class='defs'>"
                     "<dt>Programme</dt><dd>EBEWE, City of Los Angeles</dd>"
@@ -1831,11 +1874,11 @@ def render_home(source_label):
                 f"<span class='dbar'><span style='width:{p:.0f}%'></span></span>"
                 f"<span class='dnum'>{p:.0f}</span>")
             with panel(title="Data dictionary",
-                       note=f"{len(table)} columns \u00b7 scrolls in place"):
+                       note=f"{len(table)} columns \u00b7 scrolls in place", h="pair"):
                 scrollbox(["Column", "Description", "Type", "Filled %"],
                           [(r["Column"], r["Description"], f"<code>{r['Type']}</code>",
                             _bar(r["Filled %"])) for _, r in table.iterrows()],
-                          height=300, numeric_from=3)
+                          height=plot_h("pair", caption=True), numeric_from=3)
                 st.caption(
                     "Descriptions are the portal's. Type and fill rate are measured "
                     "on the loaded file after cleaning."
@@ -2061,12 +2104,13 @@ if phase == PHASE_PRELIM:
             text=[f"{v:.1f}%" if c in _com else "" for v, c in
                   zip(_m["Missing %"], _m["Column"])],
         )
-        fig.update_layout(height=560, showlegend=False, xaxis_title="Missing (%)",
-                          xaxis_ticksuffix="%")
+        fig.update_layout(height=plot_h("tall"), showlegend=False,
+                          xaxis_title="Missing (%)", xaxis_ticksuffix="%")
         fig.update_traces(textposition="outside", cliponaxis=False)
         _pad_axis(fig, miss["Missing %"])
         with _L:
-            with panel("01", "Missingness by column", f"{len(miss)} columns"):
+            with panel("01", "Missingness by column", f"{len(miss)} columns",
+                       h="tall"):
                 chart(fig)
                 method(
                     f"The fields are {', '.join('`%s`' % c for c in _com)}. An "
@@ -2084,14 +2128,14 @@ if phase == PHASE_PRELIM:
             labels={"x": "Program year", "y": "% incomplete"},
         )
         fig2.update_traces(line_color=MARK)
-        fig2.update_layout(height=250, yaxis_ticksuffix="%")
+        fig2.update_layout(height=plot_h("trio", caption=True), yaxis_ticksuffix="%")
         with _R:
-            with panel():
+            with panel(h="quad"):
                 pull(f"{len(_com)} fields, one mask",
                      f"Null on exactly the same {diag['n_incomplete']:,} records "
                      f"\u2014 no exceptions either way. That pattern is "
                      f"`isIncompleteFiling`.")
-            with panel("02", "Incomplete rate over time"):
+            with panel("02", "Incomplete rate over time", h="trio"):
                 chart(fig2)
                 st.caption(
                     "A rising rate makes a naive compliance trend look like falling "
@@ -2102,18 +2146,18 @@ if phase == PHASE_PRELIM:
         # from different angles, so they belong beside each other.
         _pb, _ob, _fr = st.columns(3, gap="medium")
         with _pb:
-          with panel("03", "Nulled", "5.2 bounds"):
+          with panel("03", "Nulled", "5.2 bounds", h="trio"):
             st.caption("Data-entry errors at both ends.")
             _pr = diag["plaus_report"]
             scrollbox(
                 ["Column", "Ceiling", "Nulled"],
                 [(r["Column"], f"{r['Ceiling']:,.0f}",
                   f"{r['Nulled as data-entry error']:,}")
-                 for _, r in _pr.iterrows()], height=160,
+                 for _, r in _pr.iterrows()], height=plot_h("trio", caption=True),
                 focus=int(_pr["Nulled as data-entry error"].astype(float).idxmax())
                 if len(_pr) else None)
         with _ob:
-          with panel("04", "Flagged only", "IQR fences"):
+          with panel("04", "Flagged only", "IQR fences", h="trio"):
             st.caption("Unusual but real buildings. Never removed.")
             _orp = diag["outlier_report"]
             _fcol = next((c for c in _orp.columns if "lag" in c), _orp.columns[-1])
@@ -2123,10 +2167,10 @@ if phase == PHASE_PRELIM:
                 [(r["Column"],
                   f"{r[_ucol]:,.2f}" if _ucol is not None else "\u2014",
                   f"{int(r[_fcol]):,}")
-                 for _, r in _orp.iterrows()], height=160,
+                 for _, r in _orp.iterrows()], height=plot_h("trio", caption=True),
                 focus=int(_orp[_fcol].astype(float).idxmax()) if len(_orp) else None)
         with _fr:
-          with panel("05", "Other repairs"):
+          with panel("05", "Other repairs", h="trio"):
             if diag.get("n_locale_property_types"):
                 st.caption(
                     f"{diag['n_locale_property_types']} filings split one category "
@@ -2631,15 +2675,16 @@ else:
                                text=f"{_ser.values[-1]:.0f}%", showarrow=False,
                                xanchor="left", xshift=10,
                                font={"size": 11, "color": INK})
-        fig.update_layout(height=430, yaxis_title="% of filings",
+        fig.update_layout(height=plot_h("hero", caption=True), yaxis_title="% of filings",
                           yaxis_ticksuffix="%", xaxis_title="Program year",
                           margin={"l": 8, "r": 56, "t": 8, "b": 8})
         with _ev:
-            with panel("Fig. 5", "Is compliance declining, or is filing completeness?"):
+            with panel("Fig. 5", "Is compliance declining, or is filing completeness?",
+                       h="hero"):
                 chart(fig)
                 st.caption("The finding is the gap, and how it widens.")
         with _nt:
-          with panel(title="Read with care"):
+          with panel(title="Read with care", h="hero"):
             # The three figures this tab would otherwise tile here are already in the
             # band above the tabs, which stays on screen. Repeating them is the
             # redundancy, not the restatement of the caveat below.
@@ -2689,13 +2734,13 @@ else:
                                      line={"color": MARK_DEEP, "width": 3}))
             fig.add_trace(go.Scatter(x=_bal.index, y=_bal["Overall %"], mode="lines+markers",
                                      name="Overall", line={"color": MARK_SOFT, "width": 2, "dash": "dot"}))
-            fig.update_layout(height=420, xaxis_title="Program Year", yaxis_title="% Compliant",
-                              title=f"{len(_panel):,} buildings held constant, {_yrs[0]}–{_yrs[-1]}",
+            fig.update_layout(height=plot_h("pair"), xaxis_title="Program Year",
+                              yaxis_title="% Compliant",
                               legend={"orientation": "h", "y": -0.2})
             _ev, _nt = evidence(ratio=1.75)
             with _ev:
                 with panel("06", "The same trend on a fixed set of buildings",
-                           f"{len(_panel):,} buildings"):
+                           f"{len(_panel):,} buildings", h="pair"):
                     chart(fig)
 
             # The shape, stated from the data. The final-year fall is excluded when locating
@@ -2743,7 +2788,7 @@ else:
         })
         _t1, _t2 = st.columns(2, gap="medium")
         with _t1:
-            with panel("07", "All filings", "unbalanced roster"):
+            with panel("07", "All filings", "unbalanced roster", h="pair"):
                 st.caption(
                     "Where the roster grows, a rate change partly reflects a change "
                     "in which buildings are measured."
@@ -2752,15 +2797,17 @@ else:
                           [(str(y), f"{r['Overall Compliance %']:.1f}",
                             f"{r['Compliance % (complete filings only)']:.1f}",
                             f"{int(r['Buildings in roster']):,}")
-                           for y, r in trend_table.iterrows()], height=220)
+                           for y, r in trend_table.iterrows()],
+                          height=plot_h("pair", caption=True))
         with _t2:
-            with panel("08", "Balanced panel", "same buildings every year"):
+            with panel("08", "Balanced panel", "same buildings every year", h="pair"):
                 st.caption("Roster held constant, so the movement is behaviour.")
                 if "_bal" in dir():
                     scrollbox(["Year", "Overall %", "Complete %", "Incomplete %"],
                               [(str(y), f"{r['Overall %']:.1f}",
                                 f"{r['Complete %']:.1f}", f"{r['Incomplete %']:.1f}")
-                               for y, r in _bal.iterrows()], height=220)
+                               for y, r in _bal.iterrows()],
+                              height=plot_h("pair", caption=True))
                 else:
                     st.caption("Not available for the current year range.")
 
