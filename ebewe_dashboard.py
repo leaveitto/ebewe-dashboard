@@ -254,8 +254,31 @@ if not IS_DARK:
         """
         <style>
           .stApp { background-color: #F6F5F3; }
-          section[data-testid="stSidebar"] { background-color: #FFFFFF;
+          /* The rail is a stack of cards sitting on the page colour, as in the
+             structure mockup, rather than one flat white column. The groups are
+             found by what they contain, so no extra wrappers are needed. */
+          section[data-testid="stSidebar"] { background-color: #F6F5F3;
             border-right: 1px solid #EBE8E5; }
+          section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+            padding: 1rem 0.85rem 2rem; display: flex; flex-direction: column; gap: 0.7rem; }
+          /* Streamlit puts an unnamed wrapper between stSidebarUserContent and the
+             block, so the rail's groups are reached through it, not as its children.
+             Verified against the live DOM rather than assumed. */
+          section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]
+            [data-testid="stVerticalBlock"] { gap: 0.7rem; }
+          /* Groups are marked in Python with railmark, the same trick card() uses in
+             the main area: a blanket rule on every element container turned eleven
+             separate widgets into eleven cards. */
+          section[data-testid="stSidebar"]
+            [data-testid="stElementContainer"]:has(.railmark) { display: none; }
+          section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(
+            > [data-testid="stElementContainer"] .railmark) {
+            background: #FFFFFF; border: 1px solid #EBE8E5; border-radius: 14px;
+            padding: 0.85rem 0.9rem; gap: 0.5rem; }
+          /* the phase nav supplies its own card shapes, so it keeps the page colour */
+          section[data-testid="stSidebar"] .st-key-phase { background: transparent;
+            border: 0 !important; padding: 0 !important; }
+          section[data-testid="stSidebar"] hr { display: none; }
           [data-testid="stElementContainer"]:has(> div > div > .cardmark) { display: none; }
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
             background: #FFFFFF; border: 1px solid #EBE8E5 !important; border-radius: 16px;
@@ -359,13 +382,33 @@ if not IS_DARK:
                    padding-top: 0.4rem; }
           .stMain [data-testid="stExpander"] summary { padding-left: 0; }
           .stMain [data-testid="stExpander"] summary svg { width: 0.8rem; height: 0.8rem; }
-          .kv { margin-bottom: 0.55rem; }
-          .kv > div { display: flex; justify-content: space-between; align-items: baseline;
-                   gap: 1rem; padding: 0.42rem 0; border-bottom: 1px solid #F2F0EE; }
-          .kv > div:last-child { border-bottom: 0; }
-          .kv span { font-size: 0.78rem; color: #7A736A; }
-          .kv b { font-size: 0.95rem; font-weight: 700; letter-spacing: -0.02em;
-                   white-space: nowrap; font-variant-numeric: tabular-nums; }
+          /* kv rows carry an inline bar: label, track, value. The track column is
+             what makes three numbers legible as a comparison without a chart. */
+          .kv { display: flex; flex-direction: column; gap: 0.56rem;
+                   margin: 0.62rem 0 0.55rem; }
+          .kv .r { display: grid; grid-template-columns: 8.6em 1fr 3.9em; gap: 0.5rem;
+                   align-items: center; font-size: 0.72rem; color: #7A736A; }
+          .kv .r > span:first-child { overflow: hidden; text-overflow: ellipsis;
+                   white-space: nowrap; }
+          .kv .r.norail { grid-template-columns: 1fr auto; }
+          .kv .t { display: block; background: #EBE8E5; border-radius: 4px; height: 9px;
+                   overflow: hidden; }
+          .kv .f { display: block; height: 100%; border-radius: 4px; background: #8A6610; }
+          .kv .f.mute { background: #D7C9AE; }
+          .kv .v { text-align: right; font-variant-numeric: tabular-nums; color: #23201C;
+                   font-size: 0.78rem; font-weight: 700; letter-spacing: -0.015em;
+                   white-space: nowrap; }
+          table.mini { width: 100%; border-collapse: collapse; font-size: 0.76rem;
+                   margin: 0.5rem 0 0.2rem; }
+          table.mini th, table.mini td { padding: 0.44rem 0.62rem; text-align: left;
+                   border-bottom: 1px solid #EBE8E5; white-space: nowrap; }
+          table.mini th { color: #7A736A; font-weight: 500; font-size: 0.66rem;
+                   text-transform: uppercase; letter-spacing: 0.05em; }
+          table.mini td.n, table.mini th.n { text-align: right;
+                   font-variant-numeric: tabular-nums; }
+          table.mini tr.focus td { background: #FDF4E0; font-weight: 600; color: #23201C; }
+          table.mini tbody tr:last-child td { border-bottom: none; }
+          .kv-legacy { margin-bottom: 0.55rem; }
           .phasecard h4 { margin: 0 !important; font-size: 1.02rem !important;
                    font-weight: 700; letter-spacing: -0.015em; padding: 0 !important; }
           .phasecard p { margin: 0.25rem 0 0; font-size: 0.82rem; color: #7A736A; }
@@ -880,11 +923,20 @@ def find_bundled_csv():
 # ----------------------------------------------------------------------------
 # Sidebar — data source and filters
 # ----------------------------------------------------------------------------
-st.sidebar.title("EBEWE Dashboard")
-st.sidebar.caption("City of Los Angeles · LADBS building benchmarking filings")
+def rail():
+    """A bordered group in the sidebar, matching the main area's card()."""
+    c = st.sidebar.container()
+    c.markdown("<span class='railmark'></span>", unsafe_allow_html=True)
+    return c
+
+
+# Two groups, as in the structure mockup: identity and source, then the phase nav.
+_rail_top = rail()
+_rail_top.title("EBEWE Dashboard")
+_rail_top.caption("City of Los Angeles · LADBS building benchmarking filings")
 
 bundled = find_bundled_csv()
-uploaded = st.sidebar.file_uploader(
+uploaded = _rail_top.file_uploader(
     "Upload the EBEWE CSV",
     type=["csv", "gz"],
     help="The same file used in Colab. Optional if a copy is bundled with the app.",
@@ -922,10 +974,9 @@ phase = st.sidebar.radio(
     help="Home summarises all three phases. Preliminary describes the data, Midterm "
          "diagnoses what the compliance label measures, Final fits the model.",
 )
-st.sidebar.divider()
-
+_rail_filters = rail()
 years = sorted(df["programYear"].dropna().unique().astype(int))
-year_range = st.sidebar.select_slider(
+year_range = _rail_filters.select_slider(
     "Program year range",
     options=years,
     value=(years[0], years[-1]),
@@ -933,7 +984,7 @@ year_range = st.sidebar.select_slider(
 
 all_types = sorted(t for t in df["propertyType"].unique() if t != "UNKNOWN")
 top_12 = list(df[~df["isIncompleteFiling"]]["propertyType"].value_counts().head(12).index)
-type_mode = st.sidebar.radio(
+type_mode = _rail_filters.radio(
     "Property types (complete filings)",
     ["Top 12 by filing count", "All types", "Choose specific types"],
     help="Segment-level views only. Twelve chips pinned open crowds the sidebar, "
@@ -944,17 +995,17 @@ if type_mode == "Top 12 by filing count":
 elif type_mode == "All types":
     chosen_types = []
 else:
-    chosen_types = st.sidebar.multiselect("Select types", options=all_types, default=[])
+    chosen_types = _rail_filters.multiselect("Select types", options=all_types, default=[])
     if not chosen_types:
-        st.sidebar.caption("No types selected — showing all.")
+        _rail_filters.caption("No types selected — showing all.")
 
-st.sidebar.divider()
-st.sidebar.caption(f"Source file: `{source_label}`")
-st.sidebar.caption(
+_rail_src = rail()
+_rail_src.caption(f"Source file: `{source_label}`")
+_rail_src.caption(
     f"{diag['raw_shape'][0]:,} rows × {diag['raw_shape'][1]} columns as loaded · "
     f"{diag['duplicates']:,} duplicate rows"
 )
-st.sidebar.download_button(
+_rail_src.download_button(
     "Download cleaned dataset (CSV)",
     data=df.to_csv(index=False).encode("utf-8"),
     file_name="ebewe_cleaned.csv",
@@ -1028,16 +1079,51 @@ def evidence(ratio=1.7, note_first=False):
     return a, b
 
 
-def kv(rows):
-    """Label-value rows inside a card.
+def kv(rows, scale=None):
+    """Label, bar, value rows inside a card.
 
-    Written as sentences these read as a paragraph to be parsed; as rows the eye goes
-    down the values and stops at the one it wants.
+    A three- or four-row comparison does not need a plotting library: the bar is the
+    comparison, and drawn inline it costs no axis, no legend and no vertical space a
+    chart would claim. rows are (label, value_text, fraction_0_to_1, muted) with the
+    last two optional; pass scale to compute the fraction from a raw number instead.
     """
     html = "<div class='kv'>"
-    for label, value in rows:
-        html += f"<div><span>{label}</span><b>{value}</b></div>"
+    for row in rows:
+        label, value = row[0], row[1]
+        frac = row[2] if len(row) > 2 else None
+        muted = row[3] if len(row) > 3 else False
+        if frac is None and scale:
+            frac = None
+        if frac is None:
+            html += (f"<div class='r norail'><span>{label}</span>"
+                     f"<b class='v'>{value}</b></div>")
+        else:
+            w = max(0.0, min(1.0, float(frac))) * 100
+            html += (f"<div class='r'><span>{label}</span>"
+                     f"<span class='t'><span class='f{' mute' if muted else ''}' "
+                     f"style='width:{w:.1f}%'></span></span>"
+                     f"<b class='v'>{value}</b></div>")
     st.markdown(html + "</div>", unsafe_allow_html=True)
+
+
+def minitable(headers, rows, focus=None, numeric_from=1):
+    """A compact table for three to six rows.
+
+    st.dataframe brings a scroll container, a toolbar and its own type scale for data
+    that is really a short list. This renders the same rows at the page's own scale,
+    with the row that carries the point highlighted rather than left for the reader
+    to find.
+    """
+    h = "".join(f"<th class=\"{'n' if i >= numeric_from else ''}\">{c}</th>"
+                for i, c in enumerate(headers))
+    body = ""
+    for i, r in enumerate(rows):
+        cls = " class='focus'" if focus is not None and i == focus else ""
+        tds = "".join(f"<td class=\"{'n' if j >= numeric_from else ''}\">{c}</td>"
+                      for j, c in enumerate(r))
+        body += f"<tr{cls}>{tds}</tr>"
+    st.markdown(f"<table class='mini'><thead><tr>{h}</tr></thead>"
+                f"<tbody>{body}</tbody></table>", unsafe_allow_html=True)
 
 
 def aside(caption_text, body, label="How this is computed"):
@@ -1439,24 +1525,35 @@ def render_home(source_label):
     _cards = [
         (c1, "01", "Preliminary", "descriptive",
          "What does the dataset contain, and what is wrong with it?",
-         [("Structurally incomplete", f"{facts['incomplete_share']:.1f}%"),
-          ("Compliant, complete filings", f"{facts['complete_rate']:.2f}%"),
-          ("NOT COMPLIED, incomplete filings", f"{facts['incomplete_notcomplied']:.2f}%")],
+         # Each pair is drawn against the same 0-100 scale, so the bars are
+         # comparable down the card and across the three cards.
+         [("Incomplete", f"{facts['incomplete_share']:.1f}%",
+           facts['incomplete_share'] / 100, True),
+          ("Compliant", f"{facts['complete_rate']:.1f}%",
+           facts['complete_rate'] / 100, False),
+          ("Incompl. failed", f"{facts['incomplete_notcomplied']:.1f}%",
+           facts['incomplete_notcomplied'] / 100, True)],
          "Data Quality · Descriptive Stats · Figures 1\u20134",
          "Open Preliminary", "go_prelim", PHASE_PRELIM),
         (c2, "02", "Midterm", "diagnostic",
          "Is compliance falling, and what actually separates it?",
-         [("Headline fall", f"{facts['fall_all']:.1f} \u2192 {facts['fall_complete']:.1f} pts"),
-          ("Coverage-tier spread",
-           f"{facts['tier_spread_all']:.1f} \u2192 {facts['tier_spread_complete']:.1f} pts"),
-          (f"Spread, {facts['n_big_entities']} organisations",
-           f"{facts['entity_spread']:.1f} pts")],
+         # Reported against surviving, on one scale, so the shrinkage is the picture.
+         [("Headline fall", f"{facts['fall_all']:.1f}", facts['fall_all'] / 100, False),
+          ("Complete only", f"{facts['fall_complete']:.1f}",
+           facts['fall_complete'] / 100, True),
+          ("Tier spread", f"{facts['tier_spread_all']:.1f}",
+           facts['tier_spread_all'] / 100, False),
+          ("Tier, complete", f"{facts['tier_spread_complete']:.1f}",
+           facts['tier_spread_complete'] / 100, True)],
          "Compliance Trend · Coverage Tier · Responsible Entity · Correlations",
          "Open Midterm", "go_mid", PHASE_MID),
         (c3, "03", "Final", "predictive",
          "Can non-compliance be predicted well enough to target audits?",
-         [("Modelled on", f"{facts['n_complete']:,} filings"),
-          ("Bar to beat", f"{facts['majority_complete']:.2f}%"),
+         [("Bar to beat", f"{facts['majority_complete']:.1f}%",
+           facts['majority_complete'] / 100, True),
+          ("One-column rule", f"{facts['one_rule_acc']:.1f}%",
+           facts['one_rule_acc'] / 100, True),
+          ("Modelled on", f"{facts['n_complete']:,}"),
           ("Target group", f"{facts['n_noncompliant_complete']:,}")],
          "Model comparison · feature importance · ranked review list",
          "Open Final", "go_final", PHASE_FINAL),
@@ -1752,11 +1849,28 @@ if phase == PHASE_PRELIM:
         with _pb:
             st.markdown("**Nulled \u2014 plausibility bounds (5.2)**")
             st.caption("Data-entry errors at both ends.")
-            st.dataframe(diag["plaus_report"], width="stretch", hide_index=True)
+            _pr = diag["plaus_report"]
+            minitable(
+                ["Column", "Ceiling", "Nulled", "% of values"],
+                [(r["Column"], f"{r['Ceiling']:,.0f}",
+                  f"{r['Nulled as data-entry error']:,}",
+                  f"{r['% of non-null values']:.2f}%")
+                 for _, r in _pr.iterrows()],
+                focus=int(_pr["Nulled as data-entry error"].astype(float).idxmax())
+                if len(_pr) else None)
         with _ob:
             st.markdown("**Flagged only \u2014 IQR fences (5.3)**")
             st.caption("Unusual but real buildings. Never removed.")
-            st.dataframe(diag["outlier_report"], width="stretch", hide_index=True)
+            _orp = diag["outlier_report"]
+            _fcol = next((c for c in _orp.columns if "lag" in c), _orp.columns[-1])
+            _ucol = next((c for c in _orp.columns if "Upper" in c), None)
+            minitable(
+                ["Column", "Upper fence", "Flagged"],
+                [(r["Column"],
+                  f"{r[_ucol]:,.2f}" if _ucol is not None else "\u2014",
+                  f"{int(r[_fcol]):,}")
+                 for _, r in _orp.iterrows()],
+                focus=int(_orp[_fcol].astype(float).idxmax()) if len(_orp) else None)
 
         if diag.get("n_locale_property_types"):
             st.markdown("**French-locale property types**")
@@ -1765,7 +1879,10 @@ if phase == PHASE_PRELIM:
                 f"labels. Distinct types: {diag['property_types_before']} before, "
                 f"{diag['property_types_after']} after."
             )
-            st.dataframe(diag["locale_property_types"], width="stretch", hide_index=True)
+            _lp = diag["locale_property_types"]
+            minitable(["From", "To", "Filings"],
+                      [(r["From"], r["To"], f"{int(r['Filings']):,}")
+                       for _, r in _lp.iterrows()], numeric_from=2)
             method(
                 "The published file encodes the same French label two ways \u2014 once "
                 "with a proper accent and once with a replacement character \u2014 so the "
@@ -1790,11 +1907,12 @@ if phase == PHASE_PRELIM:
         section("04", "Entity field repairs and audits",
                 "The field that carries the most signal, so the one worth auditing.")
 
-        r1, r2, r3 = st.columns(3)
-        r1.metric("Distinct entities", f"{diag.get('n_entities', 0):,}")
-        r2.metric("Filings with punctuation stripped", f"{diag.get('n_punct_stripped', 0):,}")
-        r3.metric("Legal-form merges", f"{diag.get('legal_merge_labels', 0):,}",
-                  f"into {diag.get('legal_merge_groups', 0)} names", delta_color="off")
+        band([
+            ("Distinct entities", f"{diag.get('n_entities', 0):,}"),
+            ("Punctuation stripped", f"{diag.get('n_punct_stripped', 0):,}"),
+            ("Legal-form merges", f"{diag.get('legal_merge_labels', 0):,}"),
+            ("Merged into", f"{diag.get('legal_merge_groups', 0)} names"),
+        ], highlight=2)
         method(
             f"{diag.get('legal_merge_labels', 0)} labels differing only in punctuation and "
             f"legal form were merged into {diag.get('legal_merge_groups', 0)} names \u2014 "
@@ -1807,7 +1925,10 @@ if phase == PHASE_PRELIM:
         with c1:
             st.markdown("**Values that cannot be company names**")
             if len(diag.get("nonname", [])):
-                st.dataframe(diag["nonname"], width="stretch", hide_index=True)
+                _nn = diag["nonname"].head(8)
+                minitable(["Value", "Flagged as", "Filings"],
+                          [(r["Value"], r["Flagged as"], f"{int(r['Filings']):,}")
+                           for _, r in _nn.iterrows()], numeric_from=2)
                 aside(
                     f"{diag['nonname_share']:.2f}% of named-entity filings. Not repaired.",
                     "The true entity is unrecoverable, and assigning these to UNKNOWN "
