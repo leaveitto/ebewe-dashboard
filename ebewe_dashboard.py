@@ -292,11 +292,12 @@ if not IS_DARK:
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark) {
             background: #FFFFFF; border: 1px solid #EBE8E5 !important; border-radius: 16px;
             padding: 1.35rem 1.5rem 1.45rem; box-shadow: 0 1px 2px rgba(31,35,41,.05);
-            display: flex; flex-direction: column; height: 100%; }
-          [data-testid="stHorizontalBlock"] { align-items: stretch; }
-          [data-testid="stColumn"] > [data-testid="stVerticalBlock"] { height: 100%; }
-          [data-testid="stColumn"] [data-testid="stLayoutWrapper"] { flex: 1 1 auto;
-            height: 100%; }
+            display: flex; flex-direction: column; }
+          /* Panels size to their content. Stretching every card in a row to the
+             tallest one turns the difference into a band of empty card, which is
+             the clutter: space spent on nothing. Tops align, bottoms are ragged,
+             and every pixel inside a panel is content. */
+          [data-testid="stHorizontalBlock"] { align-items: flex-start; }
           [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .cardmark)
             > [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
             margin-top: auto; padding-top: 0.6rem; }
@@ -473,7 +474,9 @@ if not IS_DARK:
                    white-space: nowrap; }
           /* A long table scrolls in place rather than lengthening the page. */
           .stMain .scrollbox { width: 100%; overflow: auto; border: 1px solid #EBE8E5;
-                   border-radius: 8px; margin: 0.55rem 0 0.2rem; }
+                   border-radius: 8px; margin: 0.55rem 0 0.2rem;
+                   max-height: var(--sb, 220px); }
+
           .stMain .scrollbox table.mini { margin: 0; }
           .stMain table.mini.sticky thead th { position: sticky; top: 0; z-index: 1;
                    background: #FFFFFF; box-shadow: inset 0 -1px 0 #EBE8E5; }
@@ -1254,8 +1257,11 @@ def scrollbox(headers, rows, height=200, focus=None, numeric_from=1):
         tds = "".join(f"<td class=\"{'n' if j >= numeric_from else ''}\">{c}</td>"
                       for j, c in enumerate(r))
         body += f"<tr{cls}>{tds}</tr>"
+    # height is a floor, not a cap. Cards in a row stretch to the tallest, and a
+    # fixed max-height turned that extra height into padding; as a flex floor the
+    # table grows into it and the space becomes rows instead of nothing.
     st.markdown(
-        f"<div class='scrollbox' style='max-height:{height}px'>"
+        f"<div class='scrollbox' style='--sb:{height}px'>"
         f"<table class='mini sticky'><thead><tr>{h}</tr></thead>"
         f"<tbody>{body}</tbody></table></div>", unsafe_allow_html=True)
 
