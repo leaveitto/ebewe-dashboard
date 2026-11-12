@@ -18,6 +18,7 @@ Run locally:   streamlit run ebewe_dashboard.py
 import io
 import glob
 import os
+from contextlib import contextmanager
 
 import re
 
@@ -455,6 +456,31 @@ if not IS_DARK:
           table.mini { width: 100%; border-collapse: collapse; font-size: 0.76rem;
                    margin: 0.7rem 0 0.4rem; }
           .miniwrap { width: 100%; overflow-x: auto; }
+          /* A panel header: the section rule's information, inside the card. */
+          .stMain dl.defs { display: grid; grid-template-columns: auto 1fr;
+                   gap: 0.28rem 0.9rem; font-size: 0.76rem; margin: 0.4rem 0 0.2rem; }
+          .stMain dl.defs dt { color: #7A736A; }
+          .stMain dl.defs dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+          .stMain dl.defs dd code { white-space: normal; overflow-wrap: anywhere;
+                   display: inline-block; max-width: 100%; }
+          .stMain .ph { display: flex; align-items: baseline; gap: 0.5rem;
+                   margin: 0 0 0.1rem; }
+          .stMain .ph em { font-style: normal; font-size: 0.62rem; font-weight: 700;
+                   letter-spacing: 0.08em; color: #8A6610; font-variant-numeric: tabular-nums; }
+          .stMain .ph h4 { margin: 0 !important; font-size: 0.9rem !important;
+                   font-weight: 700; letter-spacing: -0.012em; padding: 0 !important; }
+          .stMain .ph .pnote { margin-left: auto; font-size: 0.66rem; color: #7A736A;
+                   white-space: nowrap; }
+          /* A long table scrolls in place rather than lengthening the page. */
+          .stMain .scrollbox { width: 100%; overflow: auto; border: 1px solid #EBE8E5;
+                   border-radius: 8px; margin: 0.55rem 0 0.2rem; }
+          .stMain .scrollbox table.mini { margin: 0; }
+          .stMain table.mini.sticky thead th { position: sticky; top: 0; z-index: 1;
+                   background: #FFFFFF; box-shadow: inset 0 -1px 0 #EBE8E5; }
+          /* In a scrolling table the text columns wrap so the numeric ones are not
+             pushed out of the panel; nowrap stays on the numbers. */
+          .stMain table.mini.sticky td:not(.n) { white-space: normal; }
+          .stMain table.mini.sticky td:first-child { white-space: nowrap; }
           .stMain table.mini th, table.mini td { padding: 0.44rem 0.62rem; text-align: left;
                    border-bottom: 1px solid #EBE8E5; white-space: nowrap; }
           .stMain table.mini th { color: #7A736A; font-weight: 500; font-size: 0.66rem;
@@ -1192,6 +1218,48 @@ def _inline_md(text):
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
 
 
+@contextmanager
+def panel(num="", title="", note=""):
+    """A bordered panel carrying its own header.
+
+    A section rule divides a column; a panel is a box that can sit beside another
+    box. That is the whole difference between a page that only grows downwards and
+    a grid, so the header moves inside the card rather than ruling across the page.
+    """
+    c = card()
+    with c:
+        bits = ""
+        if num:
+            bits += f"<em>{num}</em>"
+        if title:
+            bits += f"<h4>{title}</h4>"
+        if note:
+            bits += f"<span class='pnote'>{note}</span>"
+        if bits:
+            st.markdown(f"<div class='ph'>{bits}</div>", unsafe_allow_html=True)
+        yield c
+
+
+def scrollbox(headers, rows, height=200, focus=None, numeric_from=1):
+    """A table that scrolls inside its panel instead of lengthening the page.
+
+    Ten or more rows of a supporting table push everything after them off screen
+    for a reader who only wanted the chart above. Fixed height, sticky header.
+    """
+    h = "".join(f"<th class=\"{'n' if i >= numeric_from else ''}\">{c}</th>"
+                for i, c in enumerate(headers))
+    body = ""
+    for i, r in enumerate(rows):
+        cls = " class='focus'" if focus is not None and i == focus else ""
+        tds = "".join(f"<td class=\"{'n' if j >= numeric_from else ''}\">{c}</td>"
+                      for j, c in enumerate(r))
+        body += f"<tr{cls}>{tds}</tr>"
+    st.markdown(
+        f"<div class='scrollbox' style='max-height:{height}px'>"
+        f"<table class='mini sticky'><thead><tr>{h}</tr></thead>"
+        f"<tbody>{body}</tbody></table></div>", unsafe_allow_html=True)
+
+
 def section(num, title, kicker=None):
     """A numbered rule between blocks.
 
@@ -1716,42 +1784,56 @@ def render_home(source_label):
     st.divider()
     with st.expander("About this dataset", expanded=False):
         raw_rows, raw_cols = diag.get("raw_shape", (len(df), len(df.columns)))
-        a1, a2, a3 = st.columns(3)
         band([
             ("Rows, as published", f"{raw_rows:,}"),
             ("Columns, as published", f"{raw_cols}"),
             ("Duplicate rows", f"{diag.get('duplicates', 0):,}"),
-            ("Filings per building", f"{raw_rows / max(1, df['buildingId'].nunique()):.2f}"),
+            ("Filings per building",
+             f"{raw_rows / max(1, df['buildingId'].nunique()):.2f}"),
         ], highlight=2)
-        st.markdown(
-            f"**Source.** Existing Buildings Energy and Water Efficiency (EBEWE) Program, "
-            f"City of Los Angeles open data portal, published by LADBS under the "
-            f"Public Domain licence. Loaded file: `{source_label}`.\n\n"
-            f"**What a row is.** One filing, not one building. "
-            f"{facts['filings']:,} filings cover {facts['buildings']:,} buildings across "
-            f"program years {facts['first_year']} to {facts['last_year']}, so a building "
-            f"appears once per year it reports."
-        )
-        src_cols = [c for c in df.columns if c in COLUMN_NOTES]
-        eng_cols = [c for c in df.columns if c in ENGINEERED_NOTES]
-        table = pd.DataFrame({
-            "Column": src_cols + eng_cols,
-            "Description": [COLUMN_NOTES.get(c, "") for c in src_cols]
-                           + [ENGINEERED_NOTES[c] for c in eng_cols],
-            "Type": [str(df[c].dtype) for c in src_cols + eng_cols],
-            "Filled %": [round(df[c].notna().mean() * 100, 1) for c in src_cols + eng_cols],
-        })
-        _bar = lambda p: (f"<span class='dbar'><span style='width:{p:.0f}%'></span></span>"
-                          f"<span class='dnum'>{p:.0f}</span>")
-        minitable(["Column", "Description", "Type", "Filled %"],
-                  [(r["Column"], r["Description"], f"<code>{r['Type']}</code>",
-                    _bar(r["Filled %"])) for _, r in table.iterrows()],
-                  numeric_from=3)
-        st.caption(
-            "Descriptions of the published columns are the portal's. Type and fill rate "
-            "are measured on the loaded file after cleaning, so they reflect this data "
-            "rather than the portal's documentation."
-        )
+
+        # Two panels rather than band, prose, table stacked. The provenance is four
+        # facts, which is a list and not a paragraph, and the dictionary scrolls in
+        # place so reading it does not move everything below it.
+        _pa, _pb = st.columns([1, 2], gap="medium")
+        with _pa:
+            with panel(title="Provenance"):
+                st.markdown(
+                    "<dl class='defs'>"
+                    "<dt>Programme</dt><dd>EBEWE, City of Los Angeles</dd>"
+                    "<dt>Publisher</dt><dd>LADBS open data portal</dd>"
+                    "<dt>Licence</dt><dd>Public Domain</dd>"
+                    f"<dt>Loaded</dt><dd><code>{source_label}</code></dd>"
+                    "</dl>", unsafe_allow_html=True)
+                pull("A row is one filing",
+                     f"Not one building. {facts['filings']:,} filings cover "
+                     f"{facts['buildings']:,} buildings across program years "
+                     f"{facts['first_year']} to {facts['last_year']}, so a building "
+                     f"appears once per year it reports.")
+        with _pb:
+            src_cols = [c for c in df.columns if c in COLUMN_NOTES]
+            eng_cols = [c for c in df.columns if c in ENGINEERED_NOTES]
+            table = pd.DataFrame({
+                "Column": src_cols + eng_cols,
+                "Description": [COLUMN_NOTES.get(c, "") for c in src_cols]
+                               + [ENGINEERED_NOTES[c] for c in eng_cols],
+                "Type": [str(df[c].dtype) for c in src_cols + eng_cols],
+                "Filled %": [round(df[c].notna().mean() * 100, 1)
+                             for c in src_cols + eng_cols],
+            })
+            _bar = lambda p: (
+                f"<span class='dbar'><span style='width:{p:.0f}%'></span></span>"
+                f"<span class='dnum'>{p:.0f}</span>")
+            with panel(title="Data dictionary",
+                       note=f"{len(table)} columns \u00b7 scrolls in place"):
+                scrollbox(["Column", "Description", "Type", "Filled %"],
+                          [(r["Column"], r["Description"], f"<code>{r['Type']}</code>",
+                            _bar(r["Filled %"])) for _, r in table.iterrows()],
+                          height=300, numeric_from=3)
+                st.caption(
+                    "Descriptions are the portal's. Type and fill rate are measured "
+                    "on the loaded file after cleaning."
+                )
 
 
 def render_final(source_label):
@@ -1952,9 +2034,11 @@ if phase == PHASE_PRELIM:
     ])
 
     with tabs[0]:
-        section("01", "Missingness by column",
-                "Six fields are null on exactly the same rows.")
-        _ev, _nt = evidence(ratio=1.9)
+        # A grid, not a stack. The evidence that carries the argument holds the left
+        # column across two panels' worth of height; its reading and the second
+        # figure sit beside it, so the whole data-quality case is one screen.
+        _L, _R = st.columns([1.5, 1], gap="medium")
+
         miss = diag["missing_report"].reset_index(names="Column")
         _com = diag.get("comissing_fields", [])
         _m = miss.sort_values("Missing %")
@@ -1971,109 +2055,100 @@ if phase == PHASE_PRELIM:
             text=[f"{v:.1f}%" if c in _com else "" for v, c in
                   zip(_m["Missing %"], _m["Column"])],
         )
-        fig.update_layout(height=620, showlegend=False, xaxis_title="Missing (%)",
+        fig.update_layout(height=560, showlegend=False, xaxis_title="Missing (%)",
                           xaxis_ticksuffix="%")
         fig.update_traces(textposition="outside", cliponaxis=False)
         _pad_axis(fig, miss["Missing %"])
-        with _ev:
-            chart(fig)
-        with _nt:
-            st.info(
-                f"**{len(_com)} fields, one mask.** Null on exactly the same "
-                f"{diag['n_incomplete']:,} records \u2014 no exceptions either way."
-            )
-            method(
-                f"The fields are {', '.join('`%s`' % c for c in _com)}. An identical "
-                f"mask, not merely a similar rate, is what justifies treating these rows "
-                f"as one event rather than six independent gaps; the flag built from it "
-                f"is `isIncompleteFiling`. Missingness is computed after the "
-                f"`Not Available` placeholder is standardized to a true null "
-                f"(Section 4.2) \u2014 left as-is, pandas treats that string as a valid "
-                f"category."
-            )
+        with _L:
+            with panel("01", "Missingness by column", f"{len(miss)} columns"):
+                chart(fig)
+                method(
+                    f"The fields are {', '.join('`%s`' % c for c in _com)}. An "
+                    f"identical mask, not merely a similar rate, is what justifies "
+                    f"treating these rows as one event rather than six independent "
+                    f"gaps; the flag built from it is `isIncompleteFiling`. "
+                    f"Missingness is computed after the `Not Available` placeholder "
+                    f"is standardized to a true null (Section 4.2) \u2014 left as-is, "
+                    f"pandas treats that string as a valid category."
+                )
 
-        section("02", "Incomplete-filing rate over time")
-        _ev, _nt = evidence(ratio=1.9, note_first=True)
         inc_by_year = df.groupby("programYear")["isIncompleteFiling"].mean().mul(100).round(1)
-        fig = px.line(
+        fig2 = px.line(
             x=inc_by_year.index, y=inc_by_year.values, markers=True,
-            labels={"x": "Program Year", "y": "% Incomplete"},
+            labels={"x": "Program year", "y": "% incomplete"},
         )
-        fig.update_traces(line_color=MARK)
-        fig.update_layout(height=350, title="Share of filings that are structurally incomplete")
-        with _ev:
-            chart(fig)
-        with _nt:
-            # Not a card: a bordered box stretches to the chart's height to hold two
-            # lines, which is most of a column of empty space.
-            st.markdown(
-                "**Why by year.** A rising incomplete-filing rate makes a naive "
-                "compliance trend look like falling performance."
-            )
+        fig2.update_traces(line_color=MARK)
+        fig2.update_layout(height=250, yaxis_ticksuffix="%")
+        with _R:
+            with panel():
+                pull(f"{len(_com)} fields, one mask",
+                     f"Null on exactly the same {diag['n_incomplete']:,} records "
+                     f"\u2014 no exceptions either way. That pattern is "
+                     f"`isIncompleteFiling`.")
+            with panel("02", "Incomplete rate over time"):
+                chart(fig2)
+                st.caption(
+                    "A rising rate makes a naive compliance trend look like falling "
+                    "performance."
+                )
 
-        # Two narrow reports answering the same question — what was altered, what was
-        # only marked — belong beside each other, not one under the other.
-        section("03", "What was corrected, and what was only flagged")
-        _pb, _ob = st.columns(2, gap="large")
+        # Three supporting reports, one row of thirds. They answer the same question
+        # from different angles, so they belong beside each other.
+        _pb, _ob, _fr = st.columns(3, gap="medium")
         with _pb:
-            st.markdown("**Nulled \u2014 plausibility bounds (5.2)**")
+          with panel("03", "Nulled", "5.2 bounds"):
             st.caption("Data-entry errors at both ends.")
             _pr = diag["plaus_report"]
-            minitable(
-                ["Column", "Ceiling", "Nulled", "% of values"],
+            scrollbox(
+                ["Column", "Ceiling", "Nulled"],
                 [(r["Column"], f"{r['Ceiling']:,.0f}",
-                  f"{r['Nulled as data-entry error']:,}",
-                  f"{r['% of non-null values']:.2f}%")
-                 for _, r in _pr.iterrows()],
+                  f"{r['Nulled as data-entry error']:,}")
+                 for _, r in _pr.iterrows()], height=160,
                 focus=int(_pr["Nulled as data-entry error"].astype(float).idxmax())
                 if len(_pr) else None)
         with _ob:
-            st.markdown("**Flagged only \u2014 IQR fences (5.3)**")
+          with panel("04", "Flagged only", "IQR fences"):
             st.caption("Unusual but real buildings. Never removed.")
             _orp = diag["outlier_report"]
             _fcol = next((c for c in _orp.columns if "lag" in c), _orp.columns[-1])
             _ucol = next((c for c in _orp.columns if "Upper" in c), None)
-            minitable(
-                ["Column", "Upper fence", "Flagged"],
+            scrollbox(
+                ["Column", "Fence", "Flagged"],
                 [(r["Column"],
                   f"{r[_ucol]:,.2f}" if _ucol is not None else "\u2014",
                   f"{int(r[_fcol]):,}")
-                 for _, r in _orp.iterrows()],
+                 for _, r in _orp.iterrows()], height=160,
                 focus=int(_orp[_fcol].astype(float).idxmax()) if len(_orp) else None)
-
-        if diag.get("n_locale_property_types"):
-            st.markdown("**French-locale property types**")
+        with _fr:
+          with panel("05", "Other repairs"):
+            if diag.get("n_locale_property_types"):
+                st.caption(
+                    f"{diag['n_locale_property_types']} filings split one category "
+                    f"across two labels. Distinct types: "
+                    f"{diag['property_types_before']} before, "
+                    f"{diag['property_types_after']} after."
+                )
+                _lp = diag["locale_property_types"]
+                scrollbox(["From", "To", "n"],
+                          [(r["From"], r["To"], f"{int(r['Filings']):,}")
+                           for _, r in _lp.iterrows()], height=130, numeric_from=2)
             st.caption(
-                f"{diag['n_locale_property_types']} filings split one category across two "
-                f"labels. Distinct types: {diag['property_types_before']} before, "
-                f"{diag['property_types_after']} after."
+                f"{diag['n_invalid_yearbuilt']} implausible `yearBuilt` values nulled "
+                f"before `buildingAge` was derived; {diag['n_locale_fixed']} "
+                f"`Non`/`Oui` entries mapped to English before any generic fill."
             )
-            _lp = diag["locale_property_types"]
-            minitable(["From", "To", "Filings"],
-                      [(r["From"], r["To"], f"{int(r['Filings']):,}")
-                       for _, r in _lp.iterrows()], numeric_from=2)
+            if diag["missing_target"] == 0:
+                st.success(f"Target integrity: 0 missing `complianceStatus`.")
+            else:
+                st.error(f"{diag['missing_target']} missing complianceStatus values.")
             method(
                 "The published file encodes the same French label two ways \u2014 once "
-                "with a proper accent and once with a replacement character \u2014 so the "
-                "map is keyed on a form that ignores non-alphanumerics rather than on "
-                "literal strings."
+                "with a proper accent and once with a replacement character \u2014 so "
+                "the map is keyed on a form that ignores non-alphanumerics rather "
+                "than on literal strings."
             )
 
-        st.caption(
-            f"Also corrected: {diag['n_invalid_yearbuilt']} implausible `yearBuilt` values "
-            f"nulled before `buildingAge` was derived, and {diag['n_locale_fixed']} "
-            f"French-locale `Non`/`Oui` entries mapped to English before any generic fill "
-            f"ran."
-        )
-        if diag["missing_target"] == 0:
-            st.success(
-                f"Target integrity check passed: 0 missing `complianceStatus` values. "
-                f"The classification target is deliberately excluded from generic fill logic.",
-            )
-        else:
-            st.error(f"{diag['missing_target']} missing complianceStatus values — resolve before modeling.")
-
-        section("04", "Entity field repairs and audits",
+        section("06", "Entity field repairs and audits",
                 "The field that carries the most signal, so the one worth auditing.")
 
         band([
@@ -2521,9 +2596,10 @@ else:
     ])
 
     with tabs[0]:
-        section("Fig. 5", "Is compliance declining, or is filing completeness?")
+        # The trend chart is the argument, so it holds the wide column; the caveat
+        # sits beside it rather than under it.
+        _ev, _nt = st.columns([2.0, 1], gap="medium")
         # series computed once above the tabs; see the note there
-        _ev, _nt = evidence(ratio=2.0)
 
         # One axis. All three series are percentages of filings, so the second
         # y-scale this used to carry was never measuring anything the first could
@@ -2553,9 +2629,11 @@ else:
                           yaxis_ticksuffix="%", xaxis_title="Program year",
                           margin={"l": 8, "r": 56, "t": 8, "b": 8})
         with _ev:
-            chart(fig)
+            with panel("Fig. 5", "Is compliance declining, or is filing completeness?"):
+                chart(fig)
+                st.caption("The finding is the gap, and how it widens.")
         with _nt:
-            st.caption("The finding is the gap, and how it widens.")
+          with panel(title="Read with care"):
             # The three figures this tab would otherwise tile here are already in the
             # band above the tabs, which stays on screen. Repeating them is the
             # redundancy, not the restatement of the caveat below.
@@ -2571,8 +2649,6 @@ else:
                     "processed. The range depends on the cohort and end year chosen.",
                     "Why the range is that wide")
 
-        section("06", "The same trend on a fixed set of buildings",
-                "Roster growth removed, so what is left is behaviour.")
 
         # Balanced panel, anchored the same way as notebook Section 6.5.1: start at the
         # first year the roster reaches 95% of its peak, rather than at the earliest year
@@ -2612,7 +2688,9 @@ else:
                               legend={"orientation": "h", "y": -0.2})
             _ev, _nt = evidence(ratio=1.75)
             with _ev:
-                chart(fig)
+                with panel("06", "The same trend on a fixed set of buildings",
+                           f"{len(_panel):,} buildings"):
+                    chart(fig)
 
             # The shape, stated from the data. The final-year fall is excluded when locating
             # the break, since it is usually the steepest drop and is reported separately.
@@ -2648,28 +2726,37 @@ else:
                     "of the notebook, rather than at the earliest year selected.",
                     "Why the endpoint figure disagrees")
 
-            with st.expander("Balanced-panel figures by year"):
-                minitable(["Year", "Overall %", "Complete %", "Incomplete %"],
-                          [(str(y), f"{r['Overall %']:.1f}", f"{r['Complete %']:.1f}",
-                            f"{r['Incomplete %']:.1f}") for y, r in _bal.iterrows()])
-
-        section("07", "All filings, unbalanced roster")
+        # The two year-by-year tables answer the same question on two rosters, so
+        # they sit side by side and scroll inside their panels. Stacked and
+        # full-height they were twenty rows that pushed the page down.
         trend_table = pd.DataFrame({
             "Overall Compliance %": yearly_overall.round(1),
             "Compliance % (complete filings only)": yearly_complete.round(1),
             "Incomplete Filing %": yearly_incomplete.round(1),
             "Buildings in roster": dff.groupby("programYear")["buildingId"].nunique(),
         })
-        st.caption(
-            "Where the roster grows, a rate change partly reflects a change in which "
-            "buildings are measured."
-        )
-        minitable(["Year", "Overall %", "Complete only %", "Incomplete %", "Buildings"],
-                  [(str(y), f"{r['Overall Compliance %']:.1f}",
-                    f"{r['Compliance % (complete filings only)']:.1f}",
-                    f"{r['Incomplete Filing %']:.1f}",
-                    f"{int(r['Buildings in roster']):,}")
-                   for y, r in trend_table.iterrows()])
+        _t1, _t2 = st.columns(2, gap="medium")
+        with _t1:
+            with panel("07", "All filings", "unbalanced roster"):
+                st.caption(
+                    "Where the roster grows, a rate change partly reflects a change "
+                    "in which buildings are measured."
+                )
+                scrollbox(["Year", "Overall %", "Complete %", "Buildings"],
+                          [(str(y), f"{r['Overall Compliance %']:.1f}",
+                            f"{r['Compliance % (complete filings only)']:.1f}",
+                            f"{int(r['Buildings in roster']):,}")
+                           for y, r in trend_table.iterrows()], height=220)
+        with _t2:
+            with panel("08", "Balanced panel", "same buildings every year"):
+                st.caption("Roster held constant, so the movement is behaviour.")
+                if "_bal" in dir():
+                    scrollbox(["Year", "Overall %", "Complete %", "Incomplete %"],
+                              [(str(y), f"{r['Overall %']:.1f}",
+                                f"{r['Complete %']:.1f}", f"{r['Incomplete %']:.1f}")
+                               for y, r in _bal.iterrows()], height=220)
+                else:
+                    st.caption("Not available for the current year range.")
 
     # ----------------------------------------------------------------------------
     # Tab 6 — Coverage Tier (Section 6.9)
