@@ -117,6 +117,15 @@ else:
     MARK = "#8A6610"
     MARK_SOFT = "#C0931F"
 
+# A correlation runs -1 to +1, so it needs a diverging scale rather than the ordered
+# ramp. Built from the same gold as every other mark, through a near-white midpoint,
+# so a named Plotly scale cannot reintroduce a second hue family.
+CORR_SCALE = [
+    [0.00, MARK_DEEP], [0.25, MARK], [0.45, "#E8DCC4"],
+    [0.50, "#F6F5F3"],
+    [0.55, "#E8DCC4"], [0.75, MARK], [1.00, MARK_DEEP],
+]
+
 # INK and SLATE are text, axes and reference lines only. They are never a mark; that
 # is what MARK_* is for, and mixing the two is how the neutral/gold clash started.
 CIVIC = CONTEXT
@@ -336,7 +345,11 @@ if not IS_DARK:
           h1 { font-size: 1.6rem !important; }
           h2 { font-size: 1.22rem !important; margin: 0.2rem 0 0.1rem !important; }
           h3 { font-size: 1rem !important; margin: 0.6rem 0 0.1rem !important; }
-          .stMarkdown p { font-size: 0.93rem; line-height: 1.5; max-width: none; }
+          /* same trap as the rule below: (0,1,1) beats every single-class size in the
+             scale, so it must exclude the classed paragraphs too. */
+          .stMarkdown p:not([class]) { font-size: 0.93rem; line-height: 1.5;
+                   max-width: none; }
+          .stMarkdown p[class] { line-height: 1.45; max-width: none; }
           [data-testid="stMetricValue"] { font-size: 1.55rem; }
           [data-testid="stMetricLabel"] { font-size: 0.72rem !important; opacity: 0.68;
             text-transform: uppercase; letter-spacing: 0.055em; }
@@ -348,31 +361,36 @@ if not IS_DARK:
             overflow: hidden; }
           .statband .bcell { background: #FFFFFF; padding: 0.8rem 1rem 0.85rem; }
           .statband .bcell.hi { background: #FDF4E0; }
-          .statband .bcell span { display: block; font-size: 0.66rem; letter-spacing: 0.06em;
+          .stMain .statband .bcell span { display: block; font-size: 0.66rem; letter-spacing: 0.06em;
             text-transform: uppercase; color: #7A736A; margin-bottom: 0.15rem; }
-          .statband .bcell b { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.025em; }
+          .stMain .statband .bcell b { font-size: 1.22rem; font-weight: 700;
+                   letter-spacing: -0.025em; }
           .pullq { background: #FDF4E0; border-left: 4px solid #B07D0A;
             border-radius: 0 14px 14px 0; padding: 0.9rem 1.2rem; }
           .srule { display: flex; gap: 0.85rem; align-items: baseline;
                    border-top: 2px solid #23201C; padding-top: 0.55rem;
                    margin: 2.1rem 0 1.1rem; }
-          .srule .snum { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+          .stMain .srule .snum { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
                    color: #B07D0A; font-variant-numeric: tabular-nums; }
-          .srule h3 { margin: 0 !important; font-size: 1.08rem !important;
+          .stMain .srule h3 { margin: 0 !important; font-size: 1.08rem !important;
                    font-weight: 700; letter-spacing: -0.015em; padding: 0 !important; }
-          .srule p { margin: 0.2rem 0 0; font-size: 0.84rem; color: #7A736A; }
+          .stMain .srule p { margin: 0.2rem 0 0; font-size: 0.84rem; color: #7A736A; }
           /* One type scale, applied everywhere. Before this, st.metric, st.caption,
              st.info and the custom helpers each set their own size, so nine text
              treatments sat within a few tenths of a rem of each other and nothing
              read as more important than anything else. */
-          [data-testid="stMetricValue"] { font-size: 1.4rem !important;
+          [data-testid="stMetricValue"] { font-size: 1.22rem !important;
                    letter-spacing: -0.025em; font-weight: 700 !important; }
           [data-testid="stMetricLabel"] p { font-size: 0.66rem !important;
                    letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
           [data-testid="stMetricDelta"] { font-size: 0.72rem !important; }
           .stAlert p, .stAlert li { font-size: 0.84rem !important; line-height: 1.5; }
           [data-testid="stCaptionContainer"] p { font-size: 0.78rem !important; }
-          .stMain .stMarkdown p, .stMain .stMarkdown li { font-size: 0.88rem; }
+          /* :not([class]) matters. This rule is (0,2,1); .claim, .sublead, .pullq p,
+             .srule p and p.lead are all (0,1,0) or (0,1,1), so without it this one
+             silently won and every custom size in the scale was being ignored. Plain
+             markdown paragraphs carry no class; the custom ones all do. */
+          .stMain .stMarkdown p:not([class]), .stMain .stMarkdown li { font-size: 0.88rem; }
           .stMain [data-testid="stExpander"] summary p { font-size: 0.75rem !important;
                    letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600;
                    color: #7A736A; }
@@ -380,13 +398,17 @@ if not IS_DARK:
                    background: transparent; }
           .stMain [data-testid="stExpander"] summary { border-top: 1px dashed #DFDCD9;
                    padding-top: 0.4rem; }
+          /* a caption immediately followed by a disclosure reads as one unit */
+          .stMain [data-testid="stElementContainer"]:has(> [data-testid="stCaptionContainer"])
+            + [data-testid="stElementContainer"]:has([data-testid="stExpander"]) {
+            margin-top: -0.35rem; }
           .stMain [data-testid="stExpander"] summary { padding-left: 0; }
           .stMain [data-testid="stExpander"] summary svg { width: 0.8rem; height: 0.8rem; }
           /* kv rows carry an inline bar: label, track, value. The track column is
              what makes three numbers legible as a comparison without a chart. */
           .kv { display: flex; flex-direction: column; gap: 0.56rem;
                    margin: 0.62rem 0 0.55rem; }
-          .kv .r { display: grid; grid-template-columns: 8.6em 1fr 3.9em; gap: 0.5rem;
+          .stMain .kv .r { display: grid; grid-template-columns: 8.6em 1fr 3.9em; gap: 0.5rem;
                    align-items: center; font-size: 0.72rem; color: #7A736A; }
           .kv .r > span:first-child { overflow: hidden; text-overflow: ellipsis;
                    white-space: nowrap; }
@@ -395,36 +417,45 @@ if not IS_DARK:
                    overflow: hidden; }
           .kv .f { display: block; height: 100%; border-radius: 4px; background: #8A6610; }
           .kv .f.mute { background: #D7C9AE; }
-          .kv .v { text-align: right; font-variant-numeric: tabular-nums; color: #23201C;
+          .stMain .kv .v { text-align: right; font-variant-numeric: tabular-nums; color: #23201C;
                    font-size: 0.78rem; font-weight: 700; letter-spacing: -0.015em;
                    white-space: nowrap; }
           table.mini { width: 100%; border-collapse: collapse; font-size: 0.76rem;
                    margin: 0.5rem 0 0.2rem; }
-          table.mini th, table.mini td { padding: 0.44rem 0.62rem; text-align: left;
+          .stMain table.mini th, table.mini td { padding: 0.44rem 0.62rem; text-align: left;
                    border-bottom: 1px solid #EBE8E5; white-space: nowrap; }
-          table.mini th { color: #7A736A; font-weight: 500; font-size: 0.66rem;
+          .stMain table.mini th { color: #7A736A; font-weight: 500; font-size: 0.66rem;
                    text-transform: uppercase; letter-spacing: 0.05em; }
           table.mini td.n, table.mini th.n { text-align: right;
                    font-variant-numeric: tabular-nums; }
           table.mini tr.focus td { background: #FDF4E0; font-weight: 600; color: #23201C; }
+          .stMain table.mini code { font-size: 0.72rem; }
+          .dbar { display: inline-block; width: 46px; height: 8px; border-radius: 4px;
+                   background: #EBE8E5; overflow: hidden; vertical-align: middle;
+                   margin-right: 0.4rem; }
+          .dbar > span { display: block; height: 100%; background: #8A6610;
+                   border-radius: 4px; }
+          .dnum { font-variant-numeric: tabular-nums; }
           table.mini tbody tr:last-child td { border-bottom: none; }
           .kv-legacy { margin-bottom: 0.55rem; }
-          .phasecard h4 { margin: 0 !important; font-size: 1.02rem !important;
+          .stMain .phasecard h4 { margin: 0 !important; font-size: 1.02rem !important;
                    font-weight: 700; letter-spacing: -0.015em; padding: 0 !important; }
-          .phasecard p { margin: 0.25rem 0 0; font-size: 0.82rem; color: #7A736A; }
-          .pullq > b { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
-          .pullq p b { font-weight: 700; color: #23201C; }
-          .pullq p { margin: 0; font-size: 0.88rem; color: #61584D; }
-          .claim { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.025em;
-            line-height: 1.25; margin: 0.3rem 0 0.4rem; }
-          .claim em { font-style: normal; color: #B07D0A; }
-          .eyebrow { font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase;
+          .stMain .phasecard p { margin: 0.25rem 0 0; font-size: 0.82rem; color: #7A736A; }
+          .stMain .pullq > b { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
+          .stMain .pullq p b { font-weight: 700; color: #23201C; }
+          .stMain .pullq p { margin: 0; font-size: 0.88rem; color: #61584D; }
+          .stMain .claim { font-size: 1.85rem; font-weight: 700; letter-spacing: -0.03em;
+            line-height: 1.2; margin: 0.35rem 0 0.5rem; }
+          .stMain .claim em { font-style: normal; color: #B07D0A; }
+          .stMain .eyebrow { font-size: 0.66rem; letter-spacing: 0.11em; text-transform: uppercase;
             color: #7A736A; font-weight: 600; }
-          .sublead { font-size: 0.88rem; color: #61584D; margin: 0; }
-          .pagehead h2 { margin: 0.1rem 0 0.15rem !important; font-size: 1.5rem !important;
-            letter-spacing: -0.015em; }
+          .stMain .sublead { font-size: 0.88rem; color: #61584D; margin: 0; }
+          .pagehead h2 { margin: 0.1rem 0 0.15rem !important; font-size: 1.7rem !important;
+            letter-spacing: -0.025em; }
+          /* the lead sits with the title rather than floating at the top of its half */
+          .stMain [data-testid="stHorizontalBlock"]:has(.pagehead) { align-items: center; }
           .pagehead .standing { font-size: 0.8rem; opacity: 0.6; margin: 0 0 0.5rem; }
-          p.lead { font-size: 0.95rem; line-height: 1.55; max-width: none; margin: 0; }
+          .stMain p.lead { font-size: 0.95rem; line-height: 1.55; max-width: none; margin: 0; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -476,6 +507,9 @@ def chart(fig, **kwargs):
         layout["title_font"] = title_font
     fig.update_layout(**layout)
     kwargs.setdefault("width", "stretch")
+    # The modebar floats over the top-right of the plot area on hover and prints
+    # into screenshots. Nothing here needs pan, lasso or autoscale.
+    kwargs.setdefault("config", {"displayModeBar": False, "staticPlot": False})
     return st.plotly_chart(fig, **kwargs)
 
 
@@ -1127,17 +1161,16 @@ def minitable(headers, rows, focus=None, numeric_from=1):
 
 
 def aside(caption_text, body, label="How this is computed"):
-    """A short caption and its disclosure on one line instead of two rows.
+    """A short caption with its disclosure directly beneath it.
 
-    Each was taking a full 1200px row to carry a single line of text. Side by side
-    they occupy one row and the disclosure stops reading as a section break.
+    This used to split into two columns to save a row. Six of its seven call sites
+    are already inside a column or a card, so the split nested a column inside a
+    column and the disclosure rendered about sixty pixels wide, with its label
+    running one letter per line. A saved row is not worth that; the two are kept
+    tight vertically instead, which reads as one unit without the risk.
     """
-    a, b = st.columns([2.6, 1], gap="medium")
-    with a:
-        st.caption(caption_text)
-    with b:
-        method(body, label)
-
+    st.caption(caption_text)
+    method(body, label)
 
 def method(body, label="How this is computed"):
     """Put the methodological passage behind a disclosure.
@@ -1574,9 +1607,12 @@ def render_home(source_label):
     with st.expander("About this dataset", expanded=False):
         raw_rows, raw_cols = diag.get("raw_shape", (len(df), len(df.columns)))
         a1, a2, a3 = st.columns(3)
-        a1.metric("Rows, as published", f"{raw_rows:,}")
-        a2.metric("Columns, as published", f"{raw_cols}")
-        a3.metric("Duplicate rows", f"{diag.get('duplicates', 0):,}")
+        band([
+            ("Rows, as published", f"{raw_rows:,}"),
+            ("Columns, as published", f"{raw_cols}"),
+            ("Duplicate rows", f"{diag.get('duplicates', 0):,}"),
+            ("Filings per building", f"{raw_rows / max(1, df['buildingId'].nunique()):.2f}"),
+        ], highlight=2)
         st.markdown(
             f"**Source.** Existing Buildings Energy and Water Efficiency (EBEWE) Program, "
             f"City of Los Angeles open data portal, published by LADBS under the "
@@ -1595,7 +1631,12 @@ def render_home(source_label):
             "Type": [str(df[c].dtype) for c in src_cols + eng_cols],
             "Filled %": [round(df[c].notna().mean() * 100, 1) for c in src_cols + eng_cols],
         })
-        st.dataframe(table, width="stretch", hide_index=True)
+        _bar = lambda p: (f"<span class='dbar'><span style='width:{p:.0f}%'></span></span>"
+                          f"<span class='dnum'>{p:.0f}</span>")
+        minitable(["Column", "Description", "Type", "Filled %"],
+                  [(r["Column"], r["Description"], f"<code>{r['Type']}</code>",
+                    _bar(r["Filled %"])) for _, r in table.iterrows()],
+                  numeric_from=3)
         st.caption(
             "Descriptions of the published columns are the portal's. Type and fill rate "
             "are measured on the loaded file after cleaning, so they reflect this data "
@@ -1634,10 +1675,18 @@ def render_final(source_label):
         "Why the split is by building")
 
     section("01", "Three models against the baseline")
-    st.dataframe(
-        comp.style.format({c: "{:.4f}" for c in
-                           ["Accuracy", "Precision", "Recall", "F1", "ROC-AUC", "PR-AUC"]}),
-        width="stretch", hide_index=True)
+    # Four rows. The chosen model is highlighted rather than left to be found by
+    # reading down the PR-AUC column.
+    _best = int(comp["PR-AUC"].astype(float).idxmax())
+    minitable(
+        ["Model", "Accuracy", "Precision", "Recall", "F1", "ROC-AUC", "PR-AUC",
+         "Caught", "False alarms", "Missed"],
+        [(r["Model"], f"{r['Accuracy']:.4f}", f"{r['Precision']:.4f}",
+          f"{r['Recall']:.4f}", f"{r['F1']:.4f}", f"{r['ROC-AUC']:.4f}",
+          f"{r['PR-AUC']:.4f}", f"{int(r['Caught']):,}",
+          f"{int(r['False alarms']):,}", f"{int(r['Missed']):,}")
+         for _, r in comp.iterrows()],
+        focus=_best)
     pull(
         "The baseline is accurate and useless",
         f"Predicting COMPLIED for every filing scores **{base['Accuracy'] * 100:.2f}%** "
@@ -1706,10 +1755,14 @@ def render_final(source_label):
                             max_value=min(2000, res["n_test"]), value=250, step=50)
             order = np.argsort(-res["proba"])
             hits = int(res["y_test"][order[:cap]].sum())
-            st.metric("Non-compliant found", f"{hits:,}")
-            st.metric("Hit rate", f"{hits / cap * 100:.1f}%",
-                      delta=f"{hits / cap * 100 - res['base_rate'] * 100:+.1f} pts vs random")
-            st.metric("Share of all non-compliant", f"{hits / res['n_pos'] * 100:.1f}%")
+            kv([
+                ("Found", f"{hits:,}", hits / max(1, cap), False),
+                ("Hit rate", f"{hits / cap * 100:.1f}%", hits / max(1, cap), False),
+                ("Random would be", f"{res['base_rate'] * 100:.1f}%",
+                 res['base_rate'], True),
+                ("Of all non-compliant", f"{hits / res['n_pos'] * 100:.1f}%",
+                 hits / max(1, res['n_pos']), True),
+            ])
             st.caption(
                 f"Reviewing {cap:,} filings at random would be expected to find about "
                 f"{cap * res['base_rate']:.0f}."
@@ -1836,11 +1889,12 @@ if phase == PHASE_PRELIM:
         with _ev:
             chart(fig)
         with _nt:
-            with card():
-                st.markdown(
-                    "**Why by year.** A rising incomplete-filing rate makes a naive "
-                    "compliance trend look like falling performance."
-                )
+            # Not a card: a bordered box stretches to the chart's height to hold two
+            # lines, which is most of a column of empty space.
+            st.markdown(
+                "**Why by year.** A rising incomplete-filing rate makes a naive "
+                "compliance trend look like falling performance."
+            )
 
         # Two narrow reports answering the same question — what was altered, what was
         # only marked — belong beside each other, not one under the other.
@@ -1939,9 +1993,9 @@ if phase == PHASE_PRELIM:
                 st.caption("None detected in this refresh.")
         with c2:
             st.markdown("**Labels that may be one organisation**")
-            st.metric("Candidate groups", f"{diag.get('dupe_groups', 0):,}",
-                      f"{diag.get('dupe_labels', 0):,} labels, {diag.get('dupe_share', 0):.1f}% of filings",
-                      delta_color="off")
+            kv([("Candidate groups", f"{diag.get('dupe_groups', 0):,}"),
+                ("Labels involved", f"{diag.get('dupe_labels', 0):,}"),
+                ("Share of filings", f"{diag.get('dupe_share', 0):.1f}%")])
             aside(
                 "What remains after the legal-form merge. Reported, not merged.",
                 "These groups share a normalised key but differ by a real word \u2014 "
@@ -1978,12 +2032,14 @@ if phase == PHASE_PRELIM:
                         f"plausibility bounds.** Read their medians and quartiles, not "
                         f"their means."
                     )
-                    method(
-                        ", ".join(
-                            f"`{r.Field}` reaches {r.Max:,.0f} against a median of "
-                            f"{r.Median:,.1f}" for r in bad.itertuples())
-                        + ". Any modelling use must extend the bounding first.",
-                        "Which fields, and by how much")
+                    with st.expander("Which fields, and by how much"):
+                        minitable(
+                            ["Field", "Max", "Median", "Ratio"],
+                            [(f"<code>{r.Field}</code>", f"{r.Max:,.0f}",
+                              f"{r.Median:,.1f}",
+                              f"{r.Max / r.Median:,.0f}\u00d7" if r.Median else "\u2014")
+                             for r in bad.itertuples()])
+                        st.caption("Any modelling use must extend the bounding first.")
                 if len(water) and water["Present %"].max() > 25 > water["Present %"].min():
                     st.info(
                         f"**The water fields split.** `totalWaterUse` reaches "
@@ -2071,7 +2127,9 @@ if phase == PHASE_PRELIM:
         central = pd.DataFrame(rows)
         _ct, _cc = st.columns([1, 1.25], gap="large")
         with _ct:
-            st.dataframe(central, width="stretch", hide_index=True)
+            minitable(["Metric", "Mean", "Median", "n"],
+                      [(r["Metric"], f"{r['Mean']:,.2f}", f"{r['Median']:,.2f}",
+                        f"{int(r['n (non-null)']):,}") for _, r in central.iterrows()])
         c2 = _cc
         fig = go.Figure()
         # Mean and median are two estimators, not a good one and a bad one.
@@ -2104,7 +2162,10 @@ if phase == PHASE_PRELIM:
                 "% flagged": round(dff[flag_col].sum() / n_valid * 100, 1) if n_valid else np.nan,
             })
         with _ev:
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            minitable(["Metric", "Max", "Std dev", "IQR-flagged", "% flagged"],
+                      [(r["Metric"], f"{r['Max']:,.0f}", f"{r['Std Dev']:,.1f}",
+                        f"{int(r['IQR-flagged']):,}", f"{r['% flagged']:.1f}%")
+                       for r in rows])
         with _nt:
             st.caption(
                 "The flag rate sits beside the standard deviation so a modeller can see "
@@ -2423,10 +2484,17 @@ else:
                 with _nt:
                     # Three readings of one line: stacked beside the chart they annotate
                     # the shape; tiled under it they read as a scorecard of their own.
-                    st.metric(f"Break at {_c.index[_bi]}", f"{_d[_bi-1]:+.1f} pts")
-                    st.metric(f"{_mid.index[0]}\u2013{_mid.index[-1]}",
-                              f"{_mid.iloc[-1] - _mid.iloc[0]:+.1f} pts")
-                    st.metric(f"Final year ({_c.index[-1]})", f"{_d[-1]:+.1f} pts")
+                    _mx = max(abs(_d[_bi-1]), abs(_mid.iloc[-1] - _mid.iloc[0]),
+                              abs(_d[-1]), 1e-9)
+                    kv([
+                        (f"Break at {_c.index[_bi]}", f"{_d[_bi-1]:+.1f}",
+                         abs(_d[_bi-1]) / _mx, False),
+                        (f"{_mid.index[0]}\u2013{_mid.index[-1]}",
+                         f"{_mid.iloc[-1] - _mid.iloc[0]:+.1f}",
+                         abs(_mid.iloc[-1] - _mid.iloc[0]) / _mx, True),
+                        (f"Final yr {_c.index[-1]}", f"{_d[-1]:+.1f}",
+                         abs(_d[-1]) / _mx, False),
+                    ])
             if len(_d) >= 3 and _mid.iloc[-1] > _mid.iloc[0]:
                 pull(
                     "Held constant, compliance improved",
@@ -2442,7 +2510,9 @@ else:
                     "Why the endpoint figure disagrees")
 
             with st.expander("Balanced-panel figures by year"):
-                st.dataframe(_bal, width="stretch")
+                minitable(["Year", "Overall %", "Complete %", "Incomplete %"],
+                          [(str(y), f"{r['Overall %']:.1f}", f"{r['Complete %']:.1f}",
+                            f"{r['Incomplete %']:.1f}") for y, r in _bal.iterrows()])
 
         section("07", "All filings, unbalanced roster")
         trend_table = pd.DataFrame({
@@ -2451,14 +2521,16 @@ else:
             "Incomplete Filing %": yearly_incomplete.round(1),
             "Buildings in roster": dff.groupby("programYear")["buildingId"].nunique(),
         })
-        _ev, _nt = evidence(ratio=2.4, note_first=True)
-        with _ev:
-            st.dataframe(trend_table, width="stretch")
-        with _nt:
-            st.caption(
-                "Where the roster grows, a rate change partly reflects a change in which "
-                "buildings are measured."
-            )
+        st.caption(
+            "Where the roster grows, a rate change partly reflects a change in which "
+            "buildings are measured."
+        )
+        minitable(["Year", "Overall %", "Complete only %", "Incomplete %", "Buildings"],
+                  [(str(y), f"{r['Overall Compliance %']:.1f}",
+                    f"{r['Compliance % (complete filings only)']:.1f}",
+                    f"{r['Incomplete Filing %']:.1f}",
+                    f"{int(r['Buildings in roster']):,}")
+                   for y, r in trend_table.iterrows()])
 
     # ----------------------------------------------------------------------------
     # Tab 6 — Coverage Tier (Section 6.9)
@@ -2617,7 +2689,9 @@ else:
                         "is not a second one: the 20,000\u201349,999 sq ft band steps at "
                         "2018, visible in the chart.", "On the 2019 break")
             with st.expander("Incompleteness by tier and year, as a table"):
-                st.dataframe(_piv, width="stretch")
+                minitable(["Year"] + [str(c) for c in _piv.columns],
+                          [tuple([str(y)] + [f"{v:.1f}" for v in r])
+                           for y, r in _piv.iterrows()])
 
     # ----------------------------------------------------------------------------
     # Tab 7 — Responsible Entity (Section 6.7)
@@ -2672,9 +2746,7 @@ else:
                 # The bases were previously described in a 106-word paragraph. They are two
                 # measurements with different denominators, which is a comparison — so it is
                 # shown as one, with the warning about comparability kept as the lead.
-                _ev, _nt = evidence(ratio=3.1)
-                with _nt:
-                    aside(
+                aside(
                         "Different denominators \u2014 not comparable as ratios. Both "
                         "bases are stated.",
                         "Agents are ranked across every complete filing; property types "
@@ -2682,23 +2754,21 @@ else:
                         "excluded throughout, since they carry UNKNOWN and are almost "
                         "never compliant, so including them would manufacture the "
                         "variation this view measures.", "What each row is computed over")
-                with _ev:
-                    st.dataframe(pd.DataFrame([
-                    # Range second, not last. It is the only column carrying a number and it was
-                    # the one that truncated, leaving three rows of denominators and no figures.
-                    {"Spread": "Across responsible agents",
-                     "Range": f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts",
-                     "Basis": f"agents with {MIN_FILINGS}+ complete filings",
-                     "Population": f"all {len(dff_complete):,} complete filings"},
-                    {"Spread": "Across property types (current selection)",
-                     "Range": f"{_types.max() - _types.min():.1f} pts",
-                     "Basis": f"types with {MIN_TYPE_FILINGS}+ filings",
-                     "Population": f"{len(_types)} types in the selection"},
-                    {"Spread": "Across property types (all qualifying)",
-                     "Range": f"{_tall.max() - _tall.min():.1f} pts",
-                     "Basis": f"types with {MIN_TYPE_FILINGS}+ filings",
-                     "Population": f"{len(_tall)} types"},
-                    ]), width="stretch", hide_index=True)
+                minitable(
+                    ["Spread", "Range", "Basis", "Population"],
+                    [("Across responsible agents",
+                      f"{_big['compliance'].max() - _big['compliance'].min():.1f} pts",
+                      f"agents with {MIN_FILINGS}+ complete filings",
+                      f"all {len(dff_complete):,} complete filings"),
+                     ("Across property types (selection)",
+                      f"{_types.max() - _types.min():.1f} pts",
+                      f"types with {MIN_TYPE_FILINGS}+ filings",
+                      f"{len(_types)} types in the selection"),
+                     ("Across property types (all qualifying)",
+                      f"{_tall.max() - _tall.min():.1f} pts",
+                      f"types with {MIN_TYPE_FILINGS}+ filings",
+                      f"{len(_tall)} types")],
+                    numeric_from=1)
                 pull(
                     "The entity separates compliance more sharply than building function",
                     f"Drop the lowest type ({_types.idxmin().title()}, "
@@ -2745,16 +2815,28 @@ else:
                 if _rows:
                     _reg = pd.DataFrame(_rows).sort_values("Change")
                     _broke = _reg[_reg["Change"].abs() >= 30]
-                    st.dataframe(_reg, width="stretch", hide_index=True)
-                    for _, r in _broke.iterrows():
-                        st.error(
-                            f"**{r['Agent']}** — {r[f'Before {_mid} %']:.1f}% across "
-                            f"{r[f'Before {_mid} n']:,} filings before {_mid}, then "
-                            f"{r[f'From {_mid} %']:.1f}% across {r[f'From {_mid} n']:,} filings after. "
-                            f"Its pooled rate of {r['Pooled %']:.1f}% describes neither period. A "
-                            f"static per-agent encoding would be wrong in both; a lagged feature — "
-                            f"the same building's compliance last year — would not.",
-                        )
+                    minitable(["Agent", "Before 2021 %", "n", "From 2021 %", "n",
+                               "Change", "Pooled %"],
+                              [(r["Agent"], f"{r['Before 2021 %']:.1f}",
+                                f"{int(r['Before 2021 n']):,}",
+                                f"{r['From 2021 %']:.1f}", f"{int(r['From 2021 n']):,}",
+                                f"{r['Change']:+.1f}", f"{r['Pooled %']:.1f}")
+                               for _, r in _reg.head(10).iterrows()],
+                              focus=0)
+                    # One sentence repeated per agent said the same thing three times.
+                    # The claim is made once; the agents it applies to are the table.
+                    if len(_broke):
+                        pull(
+                            "A pooled rate describes neither period",
+                            f"**{len(_broke)} agent(s)** move by 30 points or more across "
+                            f"{_mid}. A static per-agent encoding would be wrong on both "
+                            f"sides of the break; a lagged feature \u2014 the same "
+                            f"building's compliance last year \u2014 would not.")
+                        minitable(
+                            ["Agent", f"Before {_mid}", f"From {_mid}", "Pooled"],
+                            [(r["Agent"], f"{r[f'Before {_mid} %']:.1f}%",
+                              f"{r[f'From {_mid} %']:.1f}%", f"{r['Pooled %']:.1f}%")
+                             for _, r in _broke.iterrows()])
                     if _broke.empty:
                         st.caption("No agent changes by 30+ points across this window; the pooled "
                                    "rates can be read at face value.")
@@ -2965,26 +3047,31 @@ else:
                                       "low-cardinality substitute. A model must carry agent "
                                       "identity, with high-volume agents retained and the rest "
                                       "bucketed.")
-                        st.caption("  \n".join(_notes))
-                        st.caption(
-                            f"Reported for completeness: the widest gap between any two filer "
-                            f"types is {_sp1:.1f} points across all classified agents and "
-                            f"{_sp2:.1f} points with the regime-changers removed. That figure "
-                            f"depends on which side a few ambiguously named firms are placed on, "
-                            f"so it is not used to decide the question."
-                        )
+                        # Six stacked paragraphs. The one that changes what a modeller
+                        # does stays visible; the supporting observations go behind a
+                        # disclosure, where they can be read in full if challenged.
+                        st.caption(_notes[-1])
+                        with st.expander("The supporting observations"):
+                            st.markdown("\n".join(f"- {n}" for n in _notes[:-1]))
+                            st.caption(
+                                f"Widest gap between any two filer types: {_sp1:.1f} points "
+                                f"across all classified agents, {_sp2:.1f} with the "
+                                f"regime-changers removed. That depends on which side a few "
+                                f"ambiguously named firms are placed on, so it is not used "
+                                f"to decide the question."
+                            )
                 _unc = _typed[_typed["type"] == "UNCLASSIFIED"]
                 if len(_unc):
                     _uf = dff_complete[dff_complete["entityResponsible"].isin(_unc.index)]
                     _ur = _uf["isCompliant"].mean() * 100 if len(_uf) else float("nan")
-                    st.caption(
-                        f"{len(_unc)} agent(s) unclassified by the keyword rules, covering "
-                        f"{len(_uf):,} filings at {_ur:.1f}% compliance. They sit high, but the "
-                        f"effect of classifying them depends on which group they join — joining "
-                        f"the highest group would widen the gap, joining the lowest would narrow "
-                        f"it. This residual is a limitation of the classification, not something "
-                        f"the result is demonstrably robust to."
-                    )
+                    aside(
+                        f"{len(_unc)} agent(s) unclassified, covering {len(_uf):,} filings "
+                        f"at {_ur:.1f}% compliance.",
+                        "They sit high, but the effect of classifying them depends on "
+                        "which group they join \u2014 the highest would widen the gap, the "
+                        "lowest would narrow it. This residual is a limitation of the "
+                        "classification, not something the result is demonstrably robust "
+                        "to.", "What the unclassified agents do to the result")
 
     # ----------------------------------------------------------------------------
     # Tab 8 — Correlations (Figure 6 + Section 6.6)
@@ -2996,7 +3083,7 @@ else:
         corr = dff[corr_cols].corr().round(2)
         masked = corr.mask(np.triu(np.ones(corr.shape), k=1).astype(bool))
         fig = px.imshow(masked, text_auto=True, zmin=-1, zmax=1,
-                        color_continuous_scale="Blues", aspect="auto")
+                        color_continuous_scale=CORR_SCALE, aspect="auto")
         fig.update_layout(
             height=640,
             title="Lower triangle only — the upper half is redundant",
