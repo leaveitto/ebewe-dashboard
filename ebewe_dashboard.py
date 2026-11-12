@@ -165,7 +165,7 @@ st.markdown(
          inherited text colour with color-mix, so it tracks whichever theme is active. */
       html, body, .stApp, .stMarkdown, .stCaption, .stDataFrame,
       [data-testid="stMetricValue"], [data-testid="stMetricLabel"],
-      .stTabs [data-baseweb="tab"], [data-testid="stWidgetLabel"] {
+      .stTabs [data-testid="stTab"], [data-testid="stWidgetLabel"] {
         font-family: "IBM Plex Sans", system-ui, sans-serif;
       }
       /* Icons keep their own font whatever else is set. Restored explicitly so a future
@@ -210,7 +210,7 @@ st.markdown(
       [data-testid="stSidebar"] {
         border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent);
       }
-      .stTabs [data-baseweb="tab"] { font-size: 0.94rem; }
+      .stTabs [data-testid="stTab"] { font-size: 0.94rem; }
       /* Print. These pages get exported to PDF as the submitted artefact, so print is a
          real output rather than an afterthought. Side-by-side columns kept their screen
          widths on paper, which cut the Overview donut off at the page edge; stacking them
@@ -314,10 +314,25 @@ if not IS_DARK:
             border-radius: 16px; padding: 1.1rem 1.3rem 1.3rem;
             box-shadow: 0 1px 2px rgba(31,35,41,.05); }
           [data-testid="stTabs"] [data-testid="stMetric"] { background: #F6F5F3; }
-          .stTabs [data-baseweb="tab-highlight"] { background-color: #B07D0A; }
-          .stTabs [data-baseweb="tab-list"] { gap: 1.4rem; border-bottom: 1px solid #EBE8E5; }
-          .stTabs [data-baseweb="tab"] { padding: 0 0 0.55rem; color: #7A736A; }
-          .stTabs [aria-selected="true"] { color: #23201C; font-weight: 600; }
+          /* Pills, as in the structure mockup. An underline strip reads as browser
+             chrome; these read as a control belonging to the page.
+             This Streamlit build emits data-testid="stTab" with role="tab" and a
+             .react-aria-SelectionIndicator child -- there is no data-baseweb="tab"
+             here at all, so selectors written against that name match nothing.
+             Checked against the live DOM. */
+          .stTabs [role="tablist"] { gap: 0.4rem !important; border-bottom: 0;
+                   flex-wrap: wrap; padding: 0 0 0.2rem; }
+          .stTabs .react-aria-SelectionIndicator { display: none !important; }
+          .stTabs [data-testid="stTab"] { padding: 0.44rem 0.95rem !important;
+                   background: #F6F5F3; border: 1px solid #EBE8E5; border-radius: 999px;
+                   height: auto !important; transition: background .12s ease; }
+          .stTabs [data-testid="stTab"] p { font-size: 0.8rem !important;
+                   font-weight: 600; color: #7A736A; }
+          .stTabs [data-testid="stTab"]:hover { background: #EFEBE4; }
+          .stTabs [data-testid="stTab"]:hover p { color: #23201C; }
+          .stTabs [data-testid="stTab"][aria-selected="true"] { background: #FFC93C;
+                   border-color: #FFC93C; }
+          .stTabs [data-testid="stTab"][aria-selected="true"] p { color: #23201C; }
           .st-key-phase, .st-key-phase [data-testid="stRadio"] { width: 100%; }
           .st-key-phase [data-testid="stRadioGroup"] { gap: 0.4rem; width: 100%;
             align-items: stretch; }
@@ -422,6 +437,7 @@ if not IS_DARK:
                    white-space: nowrap; }
           table.mini { width: 100%; border-collapse: collapse; font-size: 0.76rem;
                    margin: 0.5rem 0 0.2rem; }
+          .miniwrap { width: 100%; overflow-x: auto; }
           .stMain table.mini th, table.mini td { padding: 0.44rem 0.62rem; text-align: left;
                    border-bottom: 1px solid #EBE8E5; white-space: nowrap; }
           .stMain table.mini th { color: #7A736A; font-weight: 500; font-size: 0.66rem;
@@ -1156,8 +1172,10 @@ def minitable(headers, rows, focus=None, numeric_from=1):
         tds = "".join(f"<td class=\"{'n' if j >= numeric_from else ''}\">{c}</td>"
                       for j, c in enumerate(r))
         body += f"<tr{cls}>{tds}</tr>"
-    st.markdown(f"<table class='mini'><thead><tr>{h}</tr></thead>"
-                f"<tbody>{body}</tbody></table>", unsafe_allow_html=True)
+    # nowrap keeps numbers on one line, which means a wide table overflows its
+    # column and the last column is simply cut off. The wrapper scrolls instead.
+    st.markdown(f"<div class='miniwrap'><table class='mini'><thead><tr>{h}</tr></thead>"
+                f"<tbody>{body}</tbody></table></div>", unsafe_allow_html=True)
 
 
 def aside(caption_text, body, label="How this is computed"):
@@ -2032,14 +2050,6 @@ if phase == PHASE_PRELIM:
                         f"plausibility bounds.** Read their medians and quartiles, not "
                         f"their means."
                     )
-                    with st.expander("Which fields, and by how much"):
-                        minitable(
-                            ["Field", "Max", "Median", "Ratio"],
-                            [(f"<code>{r.Field}</code>", f"{r.Max:,.0f}",
-                              f"{r.Median:,.1f}",
-                              f"{r.Max / r.Median:,.0f}\u00d7" if r.Median else "\u2014")
-                             for r in bad.itertuples()])
-                        st.caption("Any modelling use must extend the bounding first.")
                 if len(water) and water["Present %"].max() > 25 > water["Present %"].min():
                     st.info(
                         f"**The water fields split.** `totalWaterUse` reaches "
@@ -2050,6 +2060,19 @@ if phase == PHASE_PRELIM:
                     )
 
         if diag.get("pctdiff_n"):
+
+            # Four numeric columns do not fit a one-third column: the last one was
+            # simply clipped, and a scroll wrapper cannot help because the column
+            # clips first. It belongs at full width.
+            if len(bad):
+                with st.expander("Which fields, and by how much"):
+                    minitable(
+                        ["Field", "Max", "Median", "Max / median"],
+                        [(f"<code>{r.Field}</code>", f"{r.Max:,.0f}",
+                          f"{r.Median:,.1f}",
+                          f"{r.Max / r.Median:,.0f}\u00d7" if r.Median else "\u2014")
+                         for r in bad.itertuples()])
+                    st.caption("Any modelling use must extend the bounding first.")
             same, n = diag["pctdiff_same"], diag["pctdiff_n"]
             pct = same / n * 100
             if pct > 99:
@@ -2125,7 +2148,9 @@ if phase == PHASE_PRELIM:
                 "n (non-null)": int(dff[col].notna().sum()),
             })
         central = pd.DataFrame(rows)
-        _ct, _cc = st.columns([1, 1.25], gap="large")
+        # vertical_alignment="top" so the table header and the plot frame start on
+        # the same line; without it the shorter column centres against the taller.
+        _ct, _cc = st.columns([1, 1.25], gap="large", vertical_alignment="top")
         with _ct:
             minitable(["Metric", "Mean", "Median", "n"],
                       [(r["Metric"], f"{r['Mean']:,.2f}", f"{r['Median']:,.2f}",
@@ -2135,8 +2160,9 @@ if phase == PHASE_PRELIM:
         # Mean and median are two estimators, not a good one and a bad one.
         fig.add_bar(name="Mean", x=central["Metric"], y=central["Mean"], marker_color=MARK_SOFT)
         fig.add_bar(name="Median", x=central["Metric"], y=central["Median"], marker_color=MARK_DEEP)
-        fig.update_layout(barmode="group", height=340,
-                          title="Gap between mean and median")
+        fig.update_layout(barmode="group", height=300,
+                          margin={"l": 8, "r": 8, "t": 8, "b": 40},
+                          legend={"orientation": "h", "y": -0.22})
         c2.plotly_chart(fig, width="stretch")
         method(
             "The first three run the same direction \u2014 mean above median, the "
@@ -2146,8 +2172,9 @@ if phase == PHASE_PRELIM:
             "than an unbounded physical quantity. Reporting only the mean would "
             "misrepresent both cases, in opposite directions.", "Reading the two columns")
 
-        section("03", "Dispersion \u2014 range and standard deviation (6.3)")
-        _ev, _nt = evidence(ratio=2.4, note_first=True)
+        section("03", "Dispersion \u2014 range and standard deviation (6.3)",
+                "The flag rate sits beside the standard deviation so a modeller can see "
+                "how much of the tail IQR capping would touch.")
         rows = []
         for col in ["siteEui", "sourceEui", "co2Emissions"]:
             flag_col = col + "IsOutlier"
@@ -2161,16 +2188,10 @@ if phase == PHASE_PRELIM:
                 "IQR-flagged": int(dff[flag_col].sum()),
                 "% flagged": round(dff[flag_col].sum() / n_valid * 100, 1) if n_valid else np.nan,
             })
-        with _ev:
-            minitable(["Metric", "Max", "Std dev", "IQR-flagged", "% flagged"],
-                      [(r["Metric"], f"{r['Max']:,.0f}", f"{r['Std Dev']:,.1f}",
-                        f"{int(r['IQR-flagged']):,}", f"{r['% flagged']:.1f}%")
-                       for r in rows])
-        with _nt:
-            st.caption(
-                "The flag rate sits beside the standard deviation so a modeller can see "
-                "how much of the tail IQR capping would touch."
-            )
+        minitable(["Metric", "Max", "Std dev", "IQR-flagged", "% flagged"],
+                  [(r["Metric"], f"{r['Max']:,.0f}", f"{r['Std Dev']:,.1f}",
+                    f"{int(r['IQR-flagged']):,}", f"{r['% flagged']:.1f}%")
+                   for r in rows])
 
         section("04", "Median Site EUI by property type")
         _ev, _nt = evidence(ratio=1.75)
