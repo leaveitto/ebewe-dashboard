@@ -25,7 +25,6 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
 
 # ----------------------------------------------------------------------------
@@ -500,21 +499,39 @@ PLOT_FONT = {"family": "IBM Plex Sans, system-ui, sans-serif", "size": 12, "colo
 # in Python — and st.context.theme is documented as possibly stale at the moment of a
 # toggle. Keeping the structural furniture theme-agnostic means a stale value can at
 # worst tint the text, never leave a chart with invisible axes.
-GRID_RGBA = "rgba(128,134,142,0.22)"
-AXIS_RGBA = "rgba(128,134,142,0.45)"
+# One step off the surface, hairline, solid. Dashed grid reads as a threshold when
+# it is only a grid, and a heavy axis rule competes with the marks.
+GRID_RGBA = "rgba(128,120,110,0.16)"
+AXIS_RGBA = "rgba(128,120,110,0.28)"
+SURFACE = "#FFFFFF"      # the card the figures sit on; the colour of the mark gaps
 
 PLOT_LAYOUT = {
     "font": PLOT_FONT,
     "paper_bgcolor": "rgba(0,0,0,0)",
     "plot_bgcolor": "rgba(0,0,0,0)",
-    "xaxis": {"gridcolor": GRID_RGBA, "zerolinecolor": GRID_RGBA,
-              "linecolor": AXIS_RGBA, "title": {"font": {"size": 12, "color": SLATE}}},
-    "yaxis": {"gridcolor": GRID_RGBA, "zerolinecolor": GRID_RGBA,
-              "linecolor": AXIS_RGBA, "title": {"font": {"size": 12, "color": SLATE}}},
-    # title_font only — setting a title dict without "text" makes Plotly render the
-    # string "undefined" on every figure that never had a title of its own.
+    # No axis rules. The gridlines already establish the plane, and a line on top of
+    # them is a second statement of the same thing.
+    "xaxis": {"gridcolor": GRID_RGBA, "zerolinecolor": AXIS_RGBA, "zerolinewidth": 1,
+              "linecolor": "rgba(0,0,0,0)", "ticks": "",
+              "tickfont": {"size": 11, "color": SLATE},
+              "title": {"font": {"size": 11, "color": SLATE}, "standoff": 12}},
+    "yaxis": {"gridcolor": GRID_RGBA, "zerolinecolor": AXIS_RGBA, "zerolinewidth": 1,
+              "linecolor": "rgba(0,0,0,0)", "ticks": "",
+              "tickfont": {"size": 11, "color": SLATE},
+              "title": {"font": {"size": 11, "color": SLATE}, "standoff": 12}},
     "title_font": {"family": "Source Serif 4, Georgia, serif", "size": 15, "color": INK},
-    "legend": {"font": {"size": 11, "color": SLATE}},
+    # A legend below the plot, laid out horizontally, with the swatch carrying
+    # identity and the text in an ink token rather than the series colour.
+    "legend": {"font": {"size": 11, "color": SLATE}, "orientation": "h",
+               "yanchor": "top", "y": -0.16, "x": 0, "xanchor": "left",
+               "bgcolor": "rgba(0,0,0,0)", "itemsizing": "constant"},
+    # Bars never fill their slot: the leftover band is the air between them.
+    "bargap": 0.38,
+    "bargroupgap": 0.12,
+    "hoverlabel": {"bgcolor": "#FFFFFF", "bordercolor": "rgba(128,120,110,0.28)",
+                   "font": {"family": "IBM Plex Sans, system-ui, sans-serif",
+                            "size": 12, "color": INK}},
+    "margin": {"l": 8, "r": 16, "t": 8, "b": 8},
 }
 
 def chart(fig, **kwargs):
@@ -536,6 +553,41 @@ def chart(fig, **kwargs):
     if title_font and getattr(fig.layout.title, "text", None):
         layout["title_font"] = title_font
     fig.update_layout(**layout)
+
+    # Mark specs, applied centrally so no figure can miss them.
+    for tr in fig.data:
+        t = tr.type
+        if t == "bar":
+            # 4px rounded data-end, capped thickness, and a 2px surface gap between
+            # touching bars -- the gap separates them, not a stroke around each.
+            tr.update(marker_cornerradius=4,
+                      marker_line={"width": 2, "color": SURFACE})
+            if getattr(tr, "textposition", None) in (None, "auto"):
+                tr.textposition = "outside"
+            tr.textfont = {"size": 11, "color": INK}
+            tr.cliponaxis = False
+        elif t in ("scatter", "scattergl"):
+            mode = tr.mode or ""
+            if "lines" in mode:
+                tr.line.width = tr.line.width or 2
+                tr.line.shape = tr.line.shape or "linear"
+                tr.update(line_simplify=False)
+            if "markers" in mode:
+                # >=8px with a 2px surface ring so points stay legible where
+                # two series cross.
+                tr.marker.size = max(tr.marker.size or 0, 8)
+                tr.marker.line = {"width": 2, "color": SURFACE}
+        elif t == "histogram":
+            tr.update(marker_line={"width": 1, "color": SURFACE})
+
+    # A crosshair on anything time-like, per-mark hover elsewhere.
+    if fig.layout.hovermode is None:
+        has_line = any(getattr(tr, "mode", "") and "lines" in tr.mode for tr in fig.data)
+        fig.update_layout(hovermode="x unified" if has_line else "closest")
+        if has_line:
+            fig.update_xaxes(showspikes=True, spikemode="across", spikethickness=1,
+                             spikedash="solid", spikecolor=AXIS_RGBA)
+
     kwargs.setdefault("width", "stretch")
     # The modebar floats over the top-right of the plot area on hover and prints
     # into screenshots. Nothing here needs pan, lasso or autoscale.
@@ -1887,10 +1939,15 @@ if phase == PHASE_PRELIM:
             # Colour marks membership in the co-missing set, not a missingness threshold.
             # The six identical masks are the finding; every other column is context.
             color_discrete_map={True: MARK_DEEP, False: MARK_SOFT},
-            text="Missing %",
+            # A number on all 21 bars is chaos and goes unread. The six that share
+            # the mask are the finding, so only those are labelled; the axis carries
+            # the rest and the tooltip has every value.
+            text=[f"{v:.1f}%" if c in _com else "" for v, c in
+                  zip(_m["Missing %"], _m["Column"])],
         )
-        fig.update_layout(height=650, showlegend=False, xaxis_title="Missing (%)")
-        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
+        fig.update_layout(height=620, showlegend=False, xaxis_title="Missing (%)",
+                          xaxis_ticksuffix="%")
+        fig.update_traces(textposition="outside", cliponaxis=False)
         _pad_axis(fig, miss["Missing %"])
         with _ev:
             chart(fig)
@@ -2431,23 +2488,33 @@ else:
         # series computed once above the tabs; see the note there
         _ev, _nt = evidence(ratio=2.0)
 
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig.add_trace(go.Scatter(x=yearly_overall.index, y=yearly_overall.values,
-                                 mode="lines+markers", name="Overall % Compliant",
-                                 line={"color": MARK_SOFT, "width": 3}), secondary_y=False)
-        fig.add_trace(go.Scatter(x=yearly_complete.index, y=yearly_complete.values,
-                                 mode="lines+markers", name="% Compliant (complete filings only)",
-                                 line={"color": MARK_DEEP, "width": 3},
-                                 marker_symbol="triangle-up"), secondary_y=False)
-        fig.add_trace(go.Scatter(x=yearly_incomplete.index, y=yearly_incomplete.values,
-                                 mode="lines+markers", name="% Incomplete Filing",
-                                 line={"color": MARK, "width": 2, "dash": "dash"},
-                                 marker_symbol="square"), secondary_y=True)
-        fig.update_yaxes(title_text="% Compliant", secondary_y=False)
-        fig.update_yaxes(title_text="% Incomplete Filing", secondary_y=True,
-                         color=RED, showgrid=False)
-        fig.update_layout(height=480, xaxis_title="Program Year",
-                          legend={"orientation": "h", "y": -0.2})
+        # One axis. All three series are percentages of filings, so the second
+        # y-scale this used to carry was never measuring anything the first could
+        # not -- and a dual axis lets any two lines be made to cross wherever the
+        # ranges are set, which is exactly the comparison this figure is about.
+        fig = go.Figure()
+        _series = [
+            (yearly_overall, "Overall", MARK_SOFT, "solid"),
+            (yearly_complete, "Complete filings only", MARK_DEEP, "solid"),
+            (yearly_incomplete, "Incomplete filing rate", MARK, "dot"),
+        ]
+        for _ser, _name, _col, _dash in _series:
+            fig.add_trace(go.Scatter(
+                x=_ser.index, y=_ser.values, mode="lines+markers", name=_name,
+                line={"color": _col, "width": 2, "dash": _dash},
+                hovertemplate="%{y:.1f}%<extra>" + _name + "</extra>"))
+        # Endpoint labels on the two series the figure is about. Labelling all three
+        # collides: the overall rate and the incomplete rate converge at the right
+        # edge, and nudging a label off its own line reads as noise. The third stays
+        # in the legend and the tooltip.
+        for _ser, _name, _col, _ in _series[:2]:
+            fig.add_annotation(x=_ser.index[-1], y=_ser.values[-1],
+                               text=f"{_ser.values[-1]:.0f}%", showarrow=False,
+                               xanchor="left", xshift=10,
+                               font={"size": 11, "color": INK})
+        fig.update_layout(height=430, yaxis_title="% of filings",
+                          yaxis_ticksuffix="%", xaxis_title="Program year",
+                          margin={"l": 8, "r": 56, "t": 8, "b": 8})
         with _ev:
             chart(fig)
         with _nt:
